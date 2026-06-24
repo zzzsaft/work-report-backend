@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json && node scripts/copy-prisma.mjs",
-    "start": "npm install && npm run prisma:generate && node dist/server.js",
+    "start": "npm install && npm run prisma:generate && node dist/src/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "prisma:generate": "node scripts/generate-prisma-client.mjs",
