@@ -1,0 +1,363 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AppError } from "../src/lib/errors.js";
+import { WorkReportService } from "../src/modules/work-report/service.js";
+
+const user = { id: "worker-1", name: "张师傅", roles: ["worker"] };
+
+const createTx = (overrides: Record<string, unknown> = {}) => ({
+  operationPool: {
+    findUnique: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    upsert: vi.fn()
+  },
+  operationAssignment: {
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
+    update: vi.fn()
+  },
+  workOrder: {
+    upsert: vi.fn()
+  },
+  workOrderPart: {
+    upsert: vi.fn()
+  },
+  ...overrides
+});
+
+describe("WorkReportService", () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("rejects duplicate claims", async () => {
+    const tx = createTx();
+    tx.operationPool.findUnique.mockResolvedValue({
+      id: "op-1",
+      workOrderId: "order-1",
+      partId: "part-1",
+      status: "available",
+      claimedWorkers: 0,
+      maxClaimWorkers: 2
+    });
+    tx.operationAssignment.findFirst.mockResolvedValue({ id: "assignment-1" });
+
+    const db = { $transaction: vi.fn((handler) => handler(tx)) };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.claimOperation("op-1", user)).rejects.toMatchObject(
+      new AppError(409, "不能重复领取同一工序")
+    );
+  });
+
+  it("claims operations with a guarded worker-count update", async () => {
+    const tx = createTx();
+    tx.operationPool.findUnique.mockResolvedValue({
+      id: "op-1",
+      workOrderId: "order-1",
+      partId: "part-1",
+      status: "available",
+      claimedWorkers: 1,
+      maxClaimWorkers: 2,
+      plannedStart: new Date("2026-06-25T09:00:00+08:00"),
+      estimatedHours: 1.5,
+      plannedQuantity: 10
+    });
+    tx.operationAssignment.findFirst.mockResolvedValue(null);
+    tx.operationPool.updateMany.mockResolvedValue({ count: 1 });
+    tx.operationAssignment.create.mockResolvedValue({ id: "assignment-1" });
+    tx.operationAssignment.findUniqueOrThrow.mockResolvedValue({
+      id: "assignment-1",
+      operationPoolId: "op-1",
+      workOrderId: "order-1",
+      partId: "part-1",
+      workerId: user.id,
+      workerName: user.name,
+      source: "self_claimed",
+      status: "assigned",
+      plannedStart: new Date("2026-06-25T09:00:00+08:00"),
+      plannedEnd: new Date("2026-06-25T10:30:00+08:00"),
+      plannedQuantity: 10,
+      estimatedHours: 1.5,
+      canWorkerRemove: true,
+      claimedAt: new Date("2026-06-25T09:00:00+08:00"),
+      assignedById: null,
+      assignedByName: null,
+      assignedByRole: null,
+      workOrder: {
+        id: "order-1",
+        orderNo: "WO-1",
+        productCode: "PRD-1",
+        productName: "产品"
+      },
+      part: {
+        id: "part-1",
+        partCode: "P-1",
+        partName: "零件"
+      },
+      operationPool: {
+        id: "op-1",
+        operationCode: "OP-010",
+        operationName: "粗加工",
+        operationNote: ""
+      },
+      collaborators: [],
+      session: null,
+      assignedBy: null
+    });
+
+    const db = { $transaction: vi.fn((handler) => handler(tx)) };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.claimOperation("op-1", user)).resolves.toMatchObject({
+      id: "assignment-1",
+      operationCode: "OP-010"
+    });
+
+    expect(tx.operationPool.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "op-1",
+        status: "available",
+        claimedWorkers: 1
+      },
+      data: {
+        claimedWorkers: 2,
+        status: "claimed"
+      }
+    });
+  });
+
+  it("rejects removing assignments that workers cannot remove", async () => {
+    const tx = createTx();
+    tx.operationAssignment.findUnique.mockResolvedValue({
+      id: "assignment-1",
+      workerId: user.id,
+      source: "assigned",
+      status: "assigned",
+      canWorkerRemove: false,
+      operationPoolId: "op-1",
+      operationPool: { claimedWorkers: 1, status: "available" }
+    });
+
+    const db = { $transaction: vi.fn((handler) => handler(tx)) };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.removeClaimedAssignment("assignment-1", user)).rejects.toMatchObject(
+      new AppError(409, "该工序已开始或不可自行删除")
+    );
+  });
+
+  it("summarizes non-cancelled assignments by claimed date first", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 25, 10));
+
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        estimatedHours: 2.5,
+        claimedAt: new Date(2026, 5, 22, 9),
+        plannedStart: new Date(2026, 5, 21, 9)
+      },
+      {
+        estimatedHours: 3,
+        claimedAt: null,
+        plannedStart: new Date(2026, 5, 23, 9)
+      },
+      {
+        estimatedHours: null,
+        claimedAt: new Date(2026, 5, 22, 14),
+        plannedStart: new Date(2026, 5, 24, 9)
+      }
+    ]);
+    const db = { operationAssignment: { findMany } };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.getStatistics("week", user)).resolves.toMatchObject({
+      period: "week",
+      totalHours: 5.5,
+      regularHours: 5.5,
+      overtimeHours: 0,
+      completedOperations: 3,
+      attendanceDays: 2
+    });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        workerId: user.id,
+        status: { not: "cancelled" },
+        OR: [
+          {
+            claimedAt: {
+              gte: new Date(2026, 5, 22),
+              lt: new Date(2026, 5, 29)
+            }
+          },
+          {
+            claimedAt: null,
+            plannedStart: {
+              gte: new Date(2026, 5, 22),
+              lt: new Date(2026, 5, 29)
+            }
+          }
+        ]
+      }
+    });
+  });
+
+  it("supports day statistics", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 25, 10));
+
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        estimatedHours: 1.25,
+        claimedAt: new Date(2026, 5, 25, 9),
+        plannedStart: new Date(2026, 5, 24, 9)
+      }
+    ]);
+    const db = { operationAssignment: { findMany } };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.getStatistics("day", user)).resolves.toMatchObject({
+      period: "day",
+      totalHours: 1.25,
+      regularHours: 1.25,
+      overtimeHours: 0,
+      completedOperations: 1,
+      attendanceDays: 1
+    });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        workerId: user.id,
+        status: { not: "cancelled" },
+        OR: [
+          {
+            claimedAt: {
+              gte: new Date(2026, 5, 25),
+              lt: new Date(2026, 5, 26)
+            }
+          },
+          {
+            claimedAt: null,
+            plannedStart: {
+              gte: new Date(2026, 5, 25),
+              lt: new Date(2026, 5, 26)
+            }
+          }
+        ]
+      }
+    });
+  });
+
+  it("supports month statistics", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 25, 10));
+
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        estimatedHours: 2,
+        claimedAt: new Date(2026, 5, 1, 9),
+        plannedStart: new Date(2026, 4, 31, 9)
+      },
+      {
+        estimatedHours: 4,
+        claimedAt: null,
+        plannedStart: new Date(2026, 5, 30, 9)
+      }
+    ]);
+    const db = { operationAssignment: { findMany } };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.getStatistics("month", user)).resolves.toMatchObject({
+      period: "month",
+      totalHours: 6,
+      regularHours: 6,
+      overtimeHours: 0,
+      completedOperations: 2,
+      attendanceDays: 2
+    });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        workerId: user.id,
+        status: { not: "cancelled" },
+        OR: [
+          {
+            claimedAt: {
+              gte: new Date(2026, 5, 1),
+              lt: new Date(2026, 6, 1)
+            }
+          },
+          {
+            claimedAt: null,
+            plannedStart: {
+              gte: new Date(2026, 5, 1),
+              lt: new Date(2026, 6, 1)
+            }
+          }
+        ]
+      }
+    });
+  });
+
+  it("imports operations by upserting order, part, and operation", async () => {
+    const tx = createTx();
+    tx.workOrder.upsert.mockResolvedValue({ id: "order-1", orderNo: "WO-1" });
+    tx.workOrderPart.upsert.mockResolvedValue({ id: "part-1", partCode: "P-1" });
+    tx.operationPool.upsert.mockResolvedValue({
+      id: "op-1",
+      operationCode: "OP-010"
+    });
+
+    const db = { $transaction: vi.fn((handler) => handler(tx)) };
+    const service = new WorkReportService(db as never);
+
+    await expect(
+      service.importOperations(
+        [
+          {
+            orderNo: "WO-1",
+            productCode: "PRD-1",
+            productName: "产品",
+            orderPlannedQuantity: 10,
+            dueDate: new Date("2026-06-30T00:00:00+08:00"),
+            partCode: "P-1",
+            partName: "零件",
+            partPlannedQuantity: 10,
+            operationCode: "OP-010",
+            operationName: "粗加工",
+            plannedQuantity: 10,
+            estimatedHours: 1.5
+          }
+        ],
+        { id: "system-import", name: "导入接口", roles: ["leader"] }
+      )
+    ).resolves.toMatchObject({
+      accepted: 1,
+      rejected: 0,
+      items: [{ operationId: "op-1", orderNo: "WO-1", partCode: "P-1", operationCode: "OP-010" }]
+    });
+
+    expect(tx.workOrder.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { orderNo: "WO-1" } })
+    );
+    expect(tx.workOrderPart.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { workOrderId_partCode: { workOrderId: "order-1", partCode: "P-1" } }
+      })
+    );
+    expect(tx.operationPool.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          workOrderId_partId_operationCode: {
+            workOrderId: "order-1",
+            partId: "part-1",
+            operationCode: "OP-010"
+          }
+        }
+      })
+    );
+  });
+});

@@ -1,0 +1,15 @@
+model AttendanceRecord {
+  id               String   @id @default(cuid())
+  userId           String   @map("user_id")
+  date             DateTime @db.Date
+  shiftName        String   @map("shift_name")
+  regularHours     Float    @map("regular_hours")
+  overtimeHours    Float    @map("overtime_hours")
+  attendanceStatus String   @map("attendance_status")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, date])
+  @@map("attendance_records")
+  @@schema("work_report")
+}

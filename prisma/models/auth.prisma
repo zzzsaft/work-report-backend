@@ -1,0 +1,40 @@
+model User {
+  id            String                @id
+  wecomUserId   String?               @map("wecom_user_id")
+  employeeNo    String?               @map("employee_no")
+  name          String
+  nameInitials  String?               @map("name_initials")
+  avatar        String?
+  teamName      String?               @map("team_name")
+  status        String                @default("active")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+  roles         UserRole[]
+  assignments   OperationAssignment[] @relation("WorkerAssignments")
+  assignedItems OperationAssignment[] @relation("AssignedBy")
+
+  @@map("users")
+  @@schema("work_report")
+}
+
+model Role {
+  id        String     @id @default(cuid())
+  code      String     @unique
+  name      String
+  createdAt DateTime   @default(now()) @map("created_at")
+  users     UserRole[]
+
+  @@map("roles")
+  @@schema("work_report")
+}
+
+model UserRole {
+  userId String @map("user_id")
+  roleId String @map("role_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+  @@schema("work_report")
+}
