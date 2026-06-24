@@ -1,7 +1,7 @@
 import type { RequestHandler, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { sanitizeLogPayload } from "../lib/log-sanitizer.js";
+import { EXPRESS_LOG_OPTIONS, sanitizeLogPayload } from "../lib/log-sanitizer.js";
 
 type SendBody = Parameters<Response["send"]>[0];
 
@@ -41,8 +41,8 @@ export const expressLogger: RequestHandler = (req, res, next) => {
           ip: req.ip,
           userAgent: req.get("user-agent"),
           userId: req.user?.id,
-          requestBody: sanitizeLogPayload(req.body) ?? Prisma.JsonNull,
-          responseBody: sanitizeLogPayload(responseBody) ?? Prisma.JsonNull,
+          requestBody: sanitizeLogPayload(req.body, EXPRESS_LOG_OPTIONS) ?? Prisma.JsonNull,
+          responseBody: sanitizeLogPayload(responseBody, EXPRESS_LOG_OPTIONS) ?? Prisma.JsonNull,
           errorMessage
         }
       })
