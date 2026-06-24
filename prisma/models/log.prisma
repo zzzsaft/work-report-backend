@@ -1,0 +1,41 @@
+model ExpressRequestLog {
+  id           String   @id @default(cuid())
+  method       String
+  path         String
+  originalUrl  String   @map("original_url")
+  statusCode   Int      @map("status_code")
+  durationMs   Int      @map("duration_ms")
+  ip           String?
+  userAgent    String?  @map("user_agent")
+  userId       String?  @map("user_id")
+  requestBody  Json?    @map("request_body")
+  responseBody Json?    @map("response_body")
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([method, path])
+  @@index([statusCode])
+  @@index([userId])
+  @@map("express_request_logs")
+  @@schema("work_report")
+}
+
+model AxiosRequestLog {
+  id           String   @id @default(cuid())
+  method       String
+  url          String
+  baseUrl      String?  @map("base_url")
+  statusCode   Int?     @map("status_code")
+  durationMs   Int      @map("duration_ms")
+  requestBody  Json?    @map("request_body")
+  responseBody Json?    @map("response_body")
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([method, url])
+  @@index([statusCode])
+  @@map("axios_request_logs")
+  @@schema("work_report")
+}

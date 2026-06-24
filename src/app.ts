@@ -3,8 +3,12 @@ import cors from "cors";
 import express from "express";
 import { config } from "./lib/config.js";
 import { errorHandler, notFoundHandler } from "./lib/errors.js";
+import { installAxiosLogger } from "./lib/axios-logger.js";
 import { authenticate } from "./middleware/auth.js";
+import { expressLogger } from "./middleware/express-logger.js";
 import { workReportRouter } from "./modules/work-report/routes.js";
+
+installAxiosLogger();
 
 export const createApp = () => {
   const app = express();
@@ -27,6 +31,7 @@ export const createApp = () => {
     }),
   );
   app.use(cookieParser());
+  app.use(expressLogger);
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true });
