@@ -7,10 +7,11 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json && node scripts/copy-prisma.mjs",
     "deploy:mac": "bash scripts/deploy-mac.sh",
-    "start": "npm install --omit=dev && npm run prisma:generate && node dist/src/server.js",
+    "start": "npm install --omit=dev && npm run prisma:deploy && npm run prisma:generate && node dist/src/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "prisma:generate": "node scripts/generate-prisma-client.mjs",
+    "prisma:deploy": "prisma migrate deploy",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts"
   },
