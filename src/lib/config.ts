@@ -61,5 +61,11 @@ export const config = {
   xftHost: process.env.XFT_HOST || "https://api.cmbchina.com",
   xftAppid: process.env.XFT_APPID || "",
   xftAuthoritySecret: process.env.XFT_AUTHORITY_SECRET || "",
-  xftEnterpriseId: process.env.XFT_ENTERPRISE_ID || ""
+  xftEnterpriseId: process.env.XFT_ENTERPRISE_ID || "",
+  xftSsoPrivateKey: process.env.XFT_SSO_PRIVATE_KEY || process.env.RSA_PRIVATE_KEY || "",
+  xftSsoConnectorId: process.env.XFT_SSO_CONNECTOR_ID || "223147993689554944",
+  xftSsoFlowId: process.env.XFT_SSO_FLOW_ID || "224943279282388992",
+  xftSsoWecomClientId: process.env.XFT_SSO_WECOM_CLIENT_ID || "legacy-frontend",
+  xftSsoLoginBaseUrl:
+    process.env.XFT_SSO_LOGIN_BASE_URL || "https://xft.cmbchina.com/xft-gateway/xft-login-new/xwapi/login"
 };

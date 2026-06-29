@@ -6,10 +6,13 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json && node scripts/copy-prisma.mjs",
+    "deploy": "node -e \"const { spawnSync } = require('node:child_process'); const isWin = process.platform === 'win32'; const cmd = isWin ? 'powershell' : 'bash'; const args = isWin ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/deploy-win.ps1', ...process.argv.slice(1)] : ['scripts/deploy-mac.sh', ...process.argv.slice(1)]; const result = spawnSync(cmd, args, { stdio: 'inherit' }); if (result.error) throw result.error; process.exit(result.status ?? 1);\"",
     "deploy:mac": "bash scripts/deploy-mac.sh",
+    "deploy:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-win.ps1",
     "start": "npm install --omit=dev && npm run prisma:deploy && npm run prisma:generate && node dist/src/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "xft:sso-link": "tsx scripts/generate-xft-sso-link.ts",
     "prisma:generate": "node scripts/generate-prisma-client.mjs",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:migrate": "prisma migrate dev",

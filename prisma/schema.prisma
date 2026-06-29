@@ -80,6 +80,25 @@ model User {
   name              String
   nameInitials      String?              @map("name_initials")
   avatar            String?
+  gender            String?
+  qrCode            String?              @map("qr_code")
+  mobile            String?
+  email             String?
+  bizMail           String?              @map("biz_mail")
+  address           String?
+  department        Json?
+  departmentOrder   Json?                @map("department_order")
+  position          String?
+  isLeaderInDept    Json?                @map("is_leader_in_dept")
+  directLeader      Json?                @map("direct_leader")
+  telephone         String?
+  alias             String?
+  extattr           Json?
+  wecomStatus       Int?                 @map("wecom_status")
+  externalProfile   Json?                @map("external_profile")
+  externalPosition  String?              @map("external_position")
+  openUserid        String?              @map("open_userid")
+  mainDepartment    Int?                 @map("main_department")
   teamName          String?              @map("team_name")
   status            String               @default("active")
   lastLoginAt       DateTime?            @map("last_login_at")

@@ -21,6 +21,25 @@ const accountUser = (status: string): User & { userRoles: Array<{ role: { code: 
   name: "管理员",
   nameInitials: null,
   avatar: null,
+  gender: null,
+  qrCode: null,
+  mobile: null,
+  email: null,
+  bizMail: null,
+  address: null,
+  department: null,
+  departmentOrder: null,
+  position: null,
+  isLeaderInDept: null,
+  directLeader: null,
+  telephone: null,
+  alias: null,
+  extattr: null,
+  wecomStatus: null,
+  externalProfile: null,
+  externalPosition: null,
+  openUserid: null,
+  mainDepartment: null,
   teamName: null,
   status,
   lastLoginAt: null,
@@ -101,11 +120,17 @@ describe("resolveUser local token checks", () => {
     });
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: "account-1" },
-      data: {
+      data: expect.objectContaining({
         wecomUserId: null,
         name: "管理员",
-        avatar: "https://wecom.example/avatar/zz.png"
-      }
+        avatar: "https://wecom.example/avatar/zz.png",
+        gender: null,
+        qrCode: null,
+        mobile: null,
+        email: null,
+        bizMail: null,
+        address: null
+      })
     });
   });
 
@@ -131,11 +156,84 @@ describe("resolveUser local token checks", () => {
     });
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: "account-1" },
-      data: {
+      data: expect.objectContaining({
         wecomUserId: "zz",
         name: "管理员",
-        avatar: null
-      }
+        avatar: null,
+        gender: null,
+        qrCode: null,
+        mobile: null,
+        email: null,
+        bizMail: null,
+        address: null
+      })
+    });
+  });
+
+  it("stores sensitive WeCom profile fields from local tokens", async () => {
+    const { generateLocalToken } = await import("../src/lib/jwt.js");
+    const { prisma } = await import("../src/lib/prisma.js");
+    const { clearAuthCache, resolveUser } = await import("../src/middleware/auth.js");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(accountUser("active"));
+    vi.mocked(prisma.user.update).mockResolvedValue(accountUser("active"));
+    clearAuthCache();
+
+    const token = generateLocalToken({
+      userId: "account-1",
+      wecomUserId: "zz",
+      clientId: "new-frontend",
+      name: "管理员",
+      gender: "1",
+      qrCode: "https://open.work.weixin.qq.com/wwopen/userQRCode?vcode=zz",
+      mobile: "13800000000",
+      email: "zz@example.com",
+      bizMail: "zz@qyycs2.wecom.work",
+      address: null,
+      department: [1, 2],
+      departmentOrder: [10, 20],
+      position: "工程师",
+      isLeaderInDept: [0, 1],
+      directLeader: ["leader-1"],
+      telephone: "0571-12345678",
+      alias: "zhangsan",
+      extattr: { attrs: [] },
+      wecomStatus: 1,
+      externalProfile: { external_attr: [] },
+      externalPosition: "技术顾问",
+      openUserid: "open-zz",
+      mainDepartment: 2
+    });
+
+    await expect(resolveUser(token)).resolves.toMatchObject({
+      id: "account-1",
+      wecomUserId: "zz"
+    });
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: "account-1" },
+      data: expect.objectContaining({
+        wecomUserId: "zz",
+        name: "管理员",
+        avatar: null,
+        gender: "1",
+        qrCode: "https://open.work.weixin.qq.com/wwopen/userQRCode?vcode=zz",
+        mobile: "13800000000",
+        email: "zz@example.com",
+        bizMail: "zz@qyycs2.wecom.work",
+        address: null,
+        department: [1, 2],
+        departmentOrder: [10, 20],
+        position: "工程师",
+        isLeaderInDept: [0, 1],
+        directLeader: ["leader-1"],
+        telephone: "0571-12345678",
+        alias: "zhangsan",
+        extattr: { attrs: [] },
+        wecomStatus: 1,
+        externalProfile: { external_attr: [] },
+        externalPosition: "技术顾问",
+        openUserid: "open-zz",
+        mainDepartment: 2
+      })
     });
   });
 });

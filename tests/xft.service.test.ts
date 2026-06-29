@@ -1,17 +1,29 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import axios from "axios";
+import pkg from "sm-crypto";
 import { AppError } from "../src/lib/errors.js";
 import {
   buildXftCollectionPayload,
+  decryptXftBody,
+  encryptXftBody,
   getSalaryPeriodRange,
+  XftApiClient,
   XftService,
   type XftHttpClient
 } from "../src/modules/xft/service.js";
+
+vi.mock("axios", () => ({
+  default: vi.fn()
+}));
+
+const { sm2 } = pkg;
+const xftKeyPair = sm2.generateKeyPairHex();
 
 const persistedConfig = {
   id: "default",
   host: "https://api.cmbchina.com",
   appid: "appid",
-  appSecret: "secret",
+  appSecret: xftKeyPair.privateKey,
   enterpriseId: "enterprise",
   defaultUserId: "U0000",
   defaultPlatformUserId: "AUTO0001",
@@ -26,6 +38,10 @@ const persistedConfig = {
 };
 
 describe("XftService", () => {
+  beforeEach(() => {
+    vi.mocked(axios).mockClear();
+  });
+
   it("validates salary periods and returns month boundaries", () => {
     expect(getSalaryPeriodRange("202606")).toEqual({
       start: new Date(2026, 5, 1),
@@ -64,7 +80,7 @@ describe("XftService", () => {
 
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        update: expect.objectContaining({ appSecret: "secret" })
+        update: expect.objectContaining({ appSecret: xftKeyPair.privateKey })
       })
     );
   });
@@ -150,6 +166,7 @@ describe("XftService", () => {
   });
 
   it("maps xft row errors into import result", async () => {
+    const get = vi.fn();
     const post = vi.fn().mockResolvedValue({
       returnCode: "SUC0000",
       errorMsg: null,
@@ -157,7 +174,7 @@ describe("XftService", () => {
     });
     const service = new XftService(
       { xftIntegrationConfig: { findUnique: vi.fn().mockResolvedValue(persistedConfig) } } as never,
-      () => ({ post } satisfies XftHttpClient)
+      () => ({ get, post } satisfies XftHttpClient)
     );
 
     await expect(
@@ -182,5 +199,49 @@ describe("XftService", () => {
         ])
       })
     );
+  });
+
+  it("encrypts xft POST bodies with secretMsg and decrypts encrypted responses", async () => {
+    const responseBody = { returnCode: "SUC0000", errorMsg: null, body: { ok: true } };
+    vi.mocked(axios).mockResolvedValueOnce({
+      data: encryptXftBody(JSON.stringify(responseBody), persistedConfig.appSecret)
+    });
+
+    const client = new XftApiClient(persistedConfig);
+    await expect(client.post("/hrm/hrm2/test", { hello: "world" })).resolves.toEqual(responseBody);
+
+    const request = vi.mocked(axios).mock.calls[0][0] as {
+      method: string;
+      url: string;
+      data: string;
+      headers: Record<string, string>;
+    };
+    expect(request.method).toBe("POST");
+    expect(request.url).toContain("/hrm/hrm2/test?CSCAPPUID=appid&CSCPRJCOD=enterprise&");
+    expect(request.headers["x-alb-digest"]).toBeTruthy();
+
+    const encryptedRequest = JSON.parse(request.data) as { secretMsg: string };
+    expect(JSON.parse(decryptXftBody(encryptedRequest.secretMsg, persistedConfig.appSecret))).toEqual({
+      hello: "world"
+    });
+  });
+
+  it("decrypts encrypted xft GET responses", async () => {
+    const responseBody = { returnCode: "SUC0000", body: { rows: [1] } };
+    vi.mocked(axios).mockResolvedValueOnce({
+      data: encryptXftBody(JSON.stringify(responseBody), persistedConfig.appSecret)
+    });
+
+    const client = new XftApiClient(persistedConfig);
+    await expect(client.get("/hrm/hrm2/test", { page: 1 })).resolves.toEqual(responseBody);
+
+    const request = vi.mocked(axios).mock.calls[0][0] as {
+      method: string;
+      url: string;
+      headers: Record<string, string>;
+    };
+    expect(request.method).toBe("GET");
+    expect(request.url).toContain("page=1");
+    expect(request.headers["x-alb-digest"]).toBeUndefined();
   });
 });

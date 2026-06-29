@@ -76,7 +76,7 @@ XFT_ENTERPRISE_ID=
 
 `WECHAT_AUTH_ALLOWED_ORIGINS` 是登录接口允许的浏览器 Origin，多个地址用英文逗号分隔；也可以在 `wechat.json` 每个 app 的 `allowedOrigins` 单独配置。`AUTH_COOKIE_SECURE=true` 时 Cookie 只会在 HTTPS 下写入，开发环境通常设为 `false`。
 
-如果当前服务器出口 IP 没有加入企业微信可信 IP，需要像参考 `jdy_backend/src/api/jctimes` 一样走 jctimes 微信代理。配置 `WECHAT_PROXY_HOST` 和 `WECHAT_PROXY_CRYPTO_SECRET` 后，本服务会把 `/cgi-bin/gettoken`、`/cgi-bin/auth/getuserinfo`、`/cgi-bin/user/get` 通过 `POST <WECHAT_PROXY_HOST>/wechat/proxy` 转发，协议为 AES-256-GCM 加密 JSON，和参考项目一致。未配置 `WECHAT_PROXY_CRYPTO_SECRET` 时才会直连 `WECOM_API_BASE_URL`。
+如果当前服务器出口 IP 没有加入企业微信可信 IP，需要像参考 `jdy_backend/src/api/jctimes` 一样走 jctimes 微信代理。配置 `WECHAT_PROXY_HOST` 和 `WECHAT_PROXY_CRYPTO_SECRET` 后，本服务会把 `/cgi-bin/gettoken`、`/cgi-bin/auth/getuserinfo`、`/cgi-bin/auth/getuserdetail`、`/cgi-bin/user/get` 通过 `POST <WECHAT_PROXY_HOST>/wechat/proxy` 转发，协议为 AES-256-GCM 加密 JSON，和参考项目一致。未配置 `WECHAT_PROXY_CRYPTO_SECRET` 时才会直连 `WECOM_API_BASE_URL`。
 
 ## 身份验证接口
 
@@ -337,23 +337,29 @@ GET /assignments
 ### 可领取产品
 
 ```http
-GET /claim/products?keyword=<关键字>
+GET /claim/products?keyword=<关键字>&page=1&pageSize=4
 ```
 
-返回有可领取工序的工单/产品列表。`keyword` 可匹配工单号、产品编码、产品名称。
+返回有可领取工序的工单/产品分页列表。`keyword` 可匹配工单号、产品编码、产品名称，空字符串等同未传。`page` 从 1 开始，默认 1；`pageSize` 默认 4，最大 50。
 
 响应字段：
 
 ```json
-[
-  {
-    "id": "workOrderId",
-    "orderNo": "WO-20260625-001",
-    "productCode": "CP-001",
-    "productName": "产品A",
-    "remainingQuantity": 100
-  }
-]
+{
+  "items": [
+    {
+      "id": "workOrderId",
+      "orderNo": "WO-20260625-001",
+      "productCode": "CP-001",
+      "productName": "产品A",
+      "remainingQuantity": 100
+    }
+  ],
+  "page": 1,
+  "pageSize": 4,
+  "total": 123,
+  "hasMore": true
+}
 ```
 
 ### 可领取零件

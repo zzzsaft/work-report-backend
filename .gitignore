@@ -10,3 +10,5 @@ coverage
 ._*
 *.gz
 *.tar.gz
+*.gz
+.dist/work-report-backend.tar.gz

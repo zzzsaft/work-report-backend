@@ -6,6 +6,7 @@ import { verifyLocalToken } from "../../lib/jwt.js";
 import { extractAuthToken, getCapabilitiesForRoles, requireAdminUser, resolveUser } from "../../middleware/auth.js";
 import { authAccountService } from "./accounts.js";
 import { exchangeWecomCode, getWecomAuthClient, isOriginAllowed } from "./wecom.js";
+import { testXftSsoLogin, xftSsoLogin } from "../xft/sso.js";
 
 const router = Router();
 const authAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -82,6 +83,15 @@ router.post("/auth/token", async (req, res, next) => {
     next(error);
   }
 });
+
+router.get("/xft/sso", async (req, res, next) => {
+  try {
+    await xftSsoLogin(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+router.post("/xft/test", testXftSsoLogin);
 
 router.post("/auth/password/token", async (req, res, next) => {
   try {

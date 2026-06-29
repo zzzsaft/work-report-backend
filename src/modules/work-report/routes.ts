@@ -138,8 +138,14 @@ for (const action of ["start", "pause", "resume", "complete"]) {
 workReportRouter.get(
   "/claim/products",
   asyncHandler(async (req, res) => {
-    const query = z.object({ keyword: z.string().optional() }).parse(req.query);
-    res.json(await workReportService.searchClaimableProducts(query.keyword));
+    const query = z
+      .object({
+        keyword: z.string().optional(),
+        page: z.coerce.number().int().default(1),
+        pageSize: z.coerce.number().int().default(4)
+      })
+      .parse(req.query);
+    res.json(await workReportService.searchClaimableProducts(query.keyword, query.page, query.pageSize));
   })
 );
 

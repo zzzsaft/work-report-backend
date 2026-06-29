@@ -5,7 +5,7 @@ import { config } from "../../lib/config.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 
-const { sm2, sm3 } = pkg;
+const { sm2, sm3, sm4 } = pkg;
 
 const DEFAULT_CONFIG_ID = "default";
 const XFT_IMPORT_COLLECTION_PATH = "/sal/a/xft-sly/salary/api/import-collection-data";
@@ -43,7 +43,7 @@ export interface XftHoursRow {
   staffId: string;
 }
 
-interface PersistedXftConfig extends XftConfigInput {
+export interface PersistedXftConfig extends XftConfigInput {
   appSecret: string;
   hasAppSecret: boolean;
 }
@@ -57,6 +57,7 @@ interface XftImportError {
 }
 
 export interface XftHttpClient {
+  get(path: string, query?: Record<string, string | number | boolean | null | undefined>): Promise<unknown>;
   post(path: string, payload: unknown): Promise<unknown>;
 }
 
@@ -83,6 +84,41 @@ export const getSalaryPeriodRange = (salaryPeriod: string) => {
 };
 
 const roundHours = (value: number) => Number(value.toFixed(2));
+
+const encryptionKey = (authoritySecret: string) => authoritySecret.slice(0, 32);
+
+export const encryptXftBody = (body: string, authoritySecret: string) =>
+  sm4.encrypt(body, encryptionKey(authoritySecret));
+
+export const decryptXftBody = (body: string, authoritySecret: string) =>
+  sm4.decrypt(body, encryptionKey(authoritySecret));
+
+export const buildEncryptedXftRequestBody = (payload: unknown, authoritySecret: string) =>
+  JSON.stringify({
+    secretMsg: encryptXftBody(JSON.stringify(payload ?? {}), authoritySecret)
+  });
+
+const parseXftResponseData = (data: unknown, authoritySecret: string) => {
+  if (typeof data !== "string") return data;
+
+  const encrypted = data.trim().replace(/^"|"$/g, "");
+  if (!encrypted) return data;
+
+  try {
+    const decrypted = decryptXftBody(encrypted, authoritySecret);
+    try {
+      return JSON.parse(decrypted) as unknown;
+    } catch {
+      return decrypted;
+    }
+  } catch {
+    try {
+      return JSON.parse(data) as unknown;
+    } catch {
+      return data;
+    }
+  }
+};
 
 const publicConfig = (configRow: PersistedXftConfig) => ({
   host: configRow.host,
@@ -122,11 +158,10 @@ export const buildXftCollectionPayload = (
   }))
 });
 
-class XftApiClient implements XftHttpClient {
+export class XftApiClient implements XftHttpClient {
   constructor(private readonly configRow: PersistedXftConfig) {}
 
-  private genHeaders(timestamp: number, requestBody: unknown, requestPath: string, method: string) {
-    const body = JSON.stringify(requestBody ?? {});
+  private genHeaders(timestamp: number, body: string, requestPath: string, method: string) {
     const header: Record<string, string | number> = {
       "Content-Type": "application/json; charset=utf-8",
       appid: this.configRow.appid,
@@ -145,7 +180,10 @@ class XftApiClient implements XftHttpClient {
     return header;
   }
 
-  post = async (path: string, payload: unknown) => {
+  private buildPathWithQuery = (
+    path: string,
+    queryParams: Record<string, string | number | boolean | null | undefined> = {}
+  ) => {
     const timestamp = Math.floor(Date.now() / 1000);
     const query = new URLSearchParams({
       CSCAPPUID: this.configRow.appid,
@@ -154,17 +192,44 @@ class XftApiClient implements XftHttpClient {
       CSCUSRNBR: this.configRow.defaultUserId,
       CSCUSRUID: this.configRow.defaultPlatformUserId
     });
+    for (const [key, value] of Object.entries(queryParams)) {
+      if (value !== undefined && value !== null) query.set(key, String(value));
+    }
     const pathWithQuery = `${path}?${query.toString()}`;
+    return { timestamp, pathWithQuery };
+  };
+
+  get = async (path: string, queryParams: Record<string, string | number | boolean | null | undefined> = {}) => {
+    const { timestamp, pathWithQuery } = this.buildPathWithQuery(path, queryParams);
+
+    const response = await axios({
+      method: "GET",
+      url: `${trimTrailingSlash(this.configRow.host)}${pathWithQuery}`,
+      timeout: 100000,
+      responseType: "text",
+      transformResponse: [(data) => data],
+      headers: this.genHeaders(timestamp, "", pathWithQuery, "GET")
+    });
+
+    return parseXftResponseData(response.data, this.configRow.appSecret);
+  };
+
+  post = async (path: string, payload: unknown) => {
+    const { timestamp, pathWithQuery } = this.buildPathWithQuery(path);
+    const body = buildEncryptedXftRequestBody(payload ?? {}, this.configRow.appSecret);
 
     const response = await axios({
       method: "POST",
       url: `${trimTrailingSlash(this.configRow.host)}${pathWithQuery}`,
-      data: payload ?? {},
+      data: body,
       timeout: 100000,
-      headers: this.genHeaders(timestamp, payload ?? {}, pathWithQuery, "POST")
+      responseType: "text",
+      transformRequest: [(data) => data],
+      transformResponse: [(data) => data],
+      headers: this.genHeaders(timestamp, body, pathWithQuery, "POST")
     });
 
-    return response.data;
+    return parseXftResponseData(response.data, this.configRow.appSecret);
   };
 }
 

@@ -61,6 +61,7 @@ const getDateKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 const CLAIM_CONFLICT_MESSAGE = "该工序领取状态已变化，请重试";
+const MAX_CLAIM_PRODUCTS_PAGE_SIZE = 50;
 const PERMISSION_GROUPS = ["worker", "leader", "admin"] as const;
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
 
@@ -121,31 +122,45 @@ export class WorkReportService {
     return assignments.map(serializeAssignment);
   };
 
-  searchClaimableProducts = async (keyword?: string) => {
+  searchClaimableProducts = async (keyword = "", page = 1, pageSize = 4) => {
+    const safePage = Math.max(page, 1);
+    const safePageSize = Math.min(Math.max(pageSize, 1), MAX_CLAIM_PRODUCTS_PAGE_SIZE);
     const normalized = keyword?.trim();
-    const products = await this.db.workOrder.findMany({
-      where: {
-        operationPools: { some: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } } },
-        ...(normalized
-          ? {
-              OR: [
-                { orderNo: { contains: normalized, mode: "insensitive" } },
-                { productCode: { contains: normalized, mode: "insensitive" } },
-                { productName: { contains: normalized, mode: "insensitive" } }
-              ]
-            }
-          : {})
-      },
-      include: {
-        operationPools: {
-          where: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } }
-        }
-      },
-      orderBy: [{ updatedAt: "desc" }],
-      take: normalized ? 50 : 20
-    });
+    const where = {
+      operationPools: { some: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } } },
+      ...(normalized
+        ? {
+            OR: [
+              { orderNo: { contains: normalized, mode: "insensitive" as const } },
+              { productCode: { contains: normalized, mode: "insensitive" as const } },
+              { productName: { contains: normalized, mode: "insensitive" as const } }
+            ]
+          }
+        : {})
+    };
 
-    return products.map(serializeProduct);
+    const [total, products] = await Promise.all([
+      this.db.workOrder.count({ where }),
+      this.db.workOrder.findMany({
+        where,
+        include: {
+          operationPools: {
+            where: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } }
+          }
+        },
+        skip: (safePage - 1) * safePageSize,
+        take: safePageSize,
+        orderBy: [{ createdAt: "desc" }, { productCode: "asc" }, { id: "asc" }]
+      })
+    ]);
+
+    return {
+      items: products.map(serializeProduct),
+      page: safePage,
+      pageSize: safePageSize,
+      total,
+      hasMore: safePage * safePageSize < total
+    };
   };
 
   getClaimableParts = async (productId: string) => {

@@ -44,6 +44,20 @@ interface WecomUserInfoResponse {
   UserId?: string;
   userid?: string;
   user_ticket?: string;
+  user_doc_ticket?: string;
+}
+
+interface WecomUserDetailResponse {
+  errcode: number;
+  errmsg?: string;
+  userid?: string;
+  gender?: string;
+  avatar?: string;
+  qr_code?: string;
+  mobile?: string;
+  email?: string;
+  biz_mail?: string;
+  address?: string;
 }
 
 interface WecomContactUserResponse {
@@ -51,8 +65,27 @@ interface WecomContactUserResponse {
   errmsg?: string;
   userid?: string;
   name?: string;
+  gender?: string;
   avatar?: string;
   thumb_avatar?: string;
+  mobile?: string;
+  email?: string;
+  biz_mail?: string;
+  qr_code?: string;
+  address?: string;
+  department?: unknown;
+  order?: unknown;
+  position?: string;
+  is_leader_in_dept?: unknown;
+  direct_leader?: unknown;
+  telephone?: string;
+  alias?: string;
+  extattr?: unknown;
+  status?: number;
+  external_profile?: unknown;
+  external_position?: string;
+  open_userid?: string;
+  main_department?: number;
 }
 
 const accessTokenCache = new Map<string, { token: string; expiresAt: number }>();
@@ -256,14 +289,57 @@ const getAccessToken = async (client: WecomAuthClient) => {
   return data.access_token;
 };
 
-const getUserIdByCode = async (client: WecomAuthClient, accessToken: string, code: string) => {
+const normalizeOptionalString = (value: unknown) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const normalizeDisplayName = (value: unknown, userId: string) => {
+  const name = normalizeOptionalString(value);
+  if (!name) return null;
+  return name.toLowerCase() === userId.toLowerCase() ? null : name;
+};
+
+const normalizeOptionalNumber = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+
+const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
+
+const getUserInfoByCode = async (client: WecomAuthClient, accessToken: string, code: string) => {
   const data = await fetchWecomJson<WecomUserInfoResponse>("GET", "/cgi-bin/auth/getuserinfo", {
     access_token: accessToken,
     code
   });
   const userId = data.UserId ?? data.userid;
   if (data.errcode !== 0 || !userId) throw new AppError(401, "INVALID_CODE");
-  return userId;
+  return {
+    userId,
+    userTicket: normalizeOptionalString(data.user_ticket)
+  };
+};
+
+const getUserDetail = async (accessToken: string, userTicket: string) => {
+  try {
+    const data = await fetchWecomJson<WecomUserDetailResponse>(
+      "POST",
+      "/cgi-bin/auth/getuserdetail",
+      { access_token: accessToken },
+      { user_ticket: userTicket }
+    );
+    if (data.errcode !== 0) return null;
+    return {
+      userid: normalizeOptionalString(data.userid),
+      gender: normalizeOptionalString(data.gender),
+      avatar: normalizeOptionalString(data.avatar),
+      qrCode: normalizeOptionalString(data.qr_code),
+      mobile: normalizeOptionalString(data.mobile),
+      email: normalizeOptionalString(data.email),
+      bizMail: normalizeOptionalString(data.biz_mail),
+      address: normalizeOptionalString(data.address)
+    };
+  } catch {
+    return null;
+  }
 };
 
 const getContactUser = async (accessToken: string, userId: string) => {
@@ -273,7 +349,31 @@ const getContactUser = async (accessToken: string, userId: string) => {
       userid: userId
     });
     if (data.errcode !== 0) return null;
-    return data;
+    return {
+      userid: normalizeOptionalString(data.userid),
+      name: normalizeOptionalString(data.name),
+      gender: normalizeOptionalString(data.gender),
+      avatar: normalizeOptionalString(data.avatar),
+      thumbAvatar: normalizeOptionalString(data.thumb_avatar),
+      mobile: normalizeOptionalString(data.mobile),
+      email: normalizeOptionalString(data.email),
+      bizMail: normalizeOptionalString(data.biz_mail),
+      qrCode: normalizeOptionalString(data.qr_code),
+      address: normalizeOptionalString(data.address),
+      position: normalizeOptionalString(data.position),
+      telephone: normalizeOptionalString(data.telephone),
+      alias: normalizeOptionalString(data.alias),
+      wecomStatus: normalizeOptionalNumber(data.status),
+      externalPosition: normalizeOptionalString(data.external_position),
+      openUserid: normalizeOptionalString(data.open_userid),
+      mainDepartment: normalizeOptionalNumber(data.main_department),
+      ...(hasOwn(data, "department") ? { department: data.department } : {}),
+      ...(hasOwn(data, "order") ? { departmentOrder: data.order } : {}),
+      ...(hasOwn(data, "is_leader_in_dept") ? { isLeaderInDept: data.is_leader_in_dept } : {}),
+      ...(hasOwn(data, "direct_leader") ? { directLeader: data.direct_leader } : {}),
+      ...(hasOwn(data, "extattr") ? { extattr: data.extattr } : {}),
+      ...(hasOwn(data, "external_profile") ? { externalProfile: data.external_profile } : {})
+    };
   } catch {
     return null;
   }
@@ -283,18 +383,44 @@ export const exchangeWecomCode = async (clientId: string, code: string) => {
   if (!code) throw new AppError(400, "MISSING_CODE");
   const client = getWecomAuthClient(clientId);
   const accessToken = await getAccessToken(client);
-  const userId = await getUserIdByCode(client, accessToken, code);
-  const profile = await getContactUser(accessToken, userId);
-  const name = profile?.name ?? userId;
-  const avatar = profile?.avatar ?? profile?.thumb_avatar ?? null;
+  const userInfo = await getUserInfoByCode(client, accessToken, code);
+  const profile = userInfo.userTicket ? await getUserDetail(accessToken, userInfo.userTicket) : null;
+  const userId = profile?.userid ?? userInfo.userId;
+  const contact = await getContactUser(accessToken, userId);
+  const realName = normalizeDisplayName(contact?.name, userId);
+  const avatar = profile?.avatar ?? contact?.avatar ?? contact?.thumbAvatar ?? null;
+  const profilePayload = profile || contact
+    ? {
+        avatar,
+        gender: profile?.gender ?? contact?.gender ?? null,
+        qrCode: profile?.qrCode ?? contact?.qrCode ?? null,
+        mobile: profile?.mobile ?? contact?.mobile ?? null,
+        email: profile?.email ?? contact?.email ?? null,
+        bizMail: profile?.bizMail ?? contact?.bizMail ?? null,
+        address: profile?.address ?? contact?.address ?? null,
+        ...(contact?.position !== undefined ? { position: contact.position } : {}),
+        ...(contact?.telephone !== undefined ? { telephone: contact.telephone } : {}),
+        ...(contact?.alias !== undefined ? { alias: contact.alias } : {}),
+        ...(contact?.wecomStatus !== undefined ? { wecomStatus: contact.wecomStatus } : {}),
+        ...(contact?.externalPosition !== undefined ? { externalPosition: contact.externalPosition } : {}),
+        ...(contact?.openUserid !== undefined ? { openUserid: contact.openUserid } : {}),
+        ...(contact?.mainDepartment !== undefined ? { mainDepartment: contact.mainDepartment } : {}),
+        ...("department" in (contact ?? {}) ? { department: contact?.department } : {}),
+        ...("departmentOrder" in (contact ?? {}) ? { departmentOrder: contact?.departmentOrder } : {}),
+        ...("isLeaderInDept" in (contact ?? {}) ? { isLeaderInDept: contact?.isLeaderInDept } : {}),
+        ...("directLeader" in (contact ?? {}) ? { directLeader: contact?.directLeader } : {}),
+        ...("extattr" in (contact ?? {}) ? { extattr: contact?.extattr } : {}),
+        ...("externalProfile" in (contact ?? {}) ? { externalProfile: contact?.externalProfile } : {})
+      }
+    : {};
   const token = generateLocalToken({
     userId,
     wecomUserId: userId,
     corpId: client.corpId,
     clientId: client.clientId,
     scopes: client.scopes,
-    name,
-    avatar
+    ...(realName ? { name: realName } : {}),
+    ...profilePayload
   });
 
   return {
@@ -304,8 +430,9 @@ export const exchangeWecomCode = async (clientId: string, code: string) => {
       wecomUserId: userId,
       corpId: client.corpId,
       clientId: client.clientId,
-      name,
-      avatar
+      name: realName ?? userId,
+      avatar,
+      ...profilePayload
     }
   };
 };

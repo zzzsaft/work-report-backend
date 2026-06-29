@@ -44,6 +44,109 @@ describe("WorkReportService", () => {
     vi.useRealTimers();
   });
 
+  it("returns paginated claimable products with stable ordering", async () => {
+    const count = vi.fn().mockResolvedValue(5);
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "order-1",
+        orderNo: "WO-001",
+        productCode: "CP-001",
+        productName: "产品A",
+        plannedQuantity: 100,
+        completedQuantity: 20,
+        operationPools: [{ remainingQuantity: 30 }, { remainingQuantity: 15 }]
+      }
+    ]);
+    const db = { workOrder: { count, findMany } };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.searchClaimableProducts(" cp ", 2, 2)).resolves.toEqual({
+      items: [
+        {
+          id: "order-1",
+          orderNo: "WO-001",
+          productCode: "CP-001",
+          productName: "产品A",
+          remainingQuantity: 45
+        }
+      ],
+      page: 2,
+      pageSize: 2,
+      total: 5,
+      hasMore: true
+    });
+
+    const where = {
+      operationPools: { some: { status: { in: ["available", "claimed"] } } },
+      OR: [
+        { orderNo: { contains: "cp", mode: "insensitive" } },
+        { productCode: { contains: "cp", mode: "insensitive" } },
+        { productName: { contains: "cp", mode: "insensitive" } }
+      ]
+    };
+    expect(count).toHaveBeenCalledWith({ where });
+    expect(findMany).toHaveBeenCalledWith({
+      where,
+      include: {
+        operationPools: {
+          where: { status: { in: ["available", "claimed"] } }
+        }
+      },
+      skip: 2,
+      take: 2,
+      orderBy: [{ createdAt: "desc" }, { productCode: "asc" }, { id: "asc" }]
+    });
+  });
+
+  it("treats an empty claimable product keyword as omitted", async () => {
+    const count = vi.fn().mockResolvedValue(0);
+    const findMany = vi.fn().mockResolvedValue([]);
+    const db = { workOrder: { count, findMany } };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.searchClaimableProducts("   ")).resolves.toEqual({
+      items: [],
+      page: 1,
+      pageSize: 4,
+      total: 0,
+      hasMore: false
+    });
+
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        operationPools: { some: { status: { in: ["available", "claimed"] } } }
+      }
+    });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 0,
+        take: 4
+      })
+    );
+  });
+
+  it("clamps claimable product pagination and preserves total when page is out of range", async () => {
+    const count = vi.fn().mockResolvedValue(3);
+    const findMany = vi.fn().mockResolvedValue([]);
+    const db = { workOrder: { count, findMany } };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.searchClaimableProducts("", 2, 100)).resolves.toEqual({
+      items: [],
+      page: 2,
+      pageSize: 50,
+      total: 3,
+      hasMore: false
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 50,
+        take: 50
+      })
+    );
+  });
+
   it("rejects duplicate claims", async () => {
     const tx = createTx();
     tx.operationPool.findUnique.mockResolvedValue({

@@ -13,6 +13,25 @@ export interface LocalJwtPayload {
   scopes?: string[];
   name?: string | null;
   avatar?: string | null;
+  gender?: string | null;
+  qrCode?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+  bizMail?: string | null;
+  address?: string | null;
+  department?: unknown;
+  departmentOrder?: unknown;
+  position?: string | null;
+  isLeaderInDept?: unknown;
+  directLeader?: unknown;
+  telephone?: string | null;
+  alias?: string | null;
+  extattr?: unknown;
+  wecomStatus?: number | null;
+  externalProfile?: unknown;
+  externalPosition?: string | null;
+  openUserid?: string | null;
+  mainDepartment?: number | null;
 }
 
 export interface LocalAuthenticatedJwt extends LocalJwtPayload {
