@@ -12,4 +12,7 @@ if (!existsSync(sourceDir)) {
 
 mkdirSync(dirname(targetDir), { recursive: true });
 rmSync(targetDir, { recursive: true, force: true });
-cpSync(sourceDir, targetDir, { recursive: true });
+cpSync(sourceDir, targetDir, {
+  recursive: true,
+  filter: (source) => !/\/\._[^/]+$/.test(source) && !/\/\.DS_Store$/.test(source)
+});

@@ -4,6 +4,41 @@ import { AppError, asyncHandler } from "../../lib/errors.js";
 import { getCapabilitiesForRoles, requireCapability } from "../../middleware/auth.js";
 import { MAX_IMPORT_OPERATIONS, workReportService } from "./service.js";
 
+const dateStringSchema = z.string().refine(
+  (val) => {
+    if (!val) return true;
+    const formats = [
+      /^\d{4}-\d{2}-\d{2}$/,
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/,
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+      /^\d{4}\/\d{2}\/\d{2}$/
+    ];
+    return formats.some((format) => format.test(val)) && !Number.isNaN(new Date(val).getTime());
+  },
+  { message: "Invalid date format" }
+);
+
+const thirdPartyImportOperationSchema = z.object({
+  orderNo: z.string().trim().min(1),
+  productCode: z.string().trim().min(1),
+  productName: z.string().trim().min(1),
+  partNo: z.coerce.string().trim().min(1),
+  partCode: z.string().trim().min(1),
+  partName: z.string().trim().min(1),
+  operationNo: z.coerce.string().trim().min(1),
+  operationCode: z.string().trim().min(1),
+  operationName: z.string().trim().min(1),
+  estimatedHours: z.coerce.number().positive(),
+  operationNote: z.string().trim().optional(),
+  plannedQuantity: z.coerce.number().positive().optional(),
+  dueDate: dateStringSchema.nullable().optional()
+});
+
+const thirdPartyImportSchema = z.union([
+  z.array(thirdPartyImportOperationSchema).min(1).max(MAX_IMPORT_OPERATIONS),
+  z.object({ operations: z.array(thirdPartyImportOperationSchema).min(1).max(MAX_IMPORT_OPERATIONS) })
+]);
+
 export const workReportRouter = Router();
 
 const requireUser = (req: Parameters<Parameters<typeof asyncHandler>[0]>[0]) => {
@@ -15,34 +50,44 @@ const notImplemented = () => {
   throw new AppError(501, "v2 报工流程暂未实现");
 };
 
-const importOperationSchema = z.object({
-  orderNo: z.string().trim().min(1),
+const leaderImportRowSchema = z.object({
   productCode: z.string().trim().min(1),
-  productName: z.string().trim().min(1),
-  orderPlannedQuantity: z.coerce.number().int().positive(),
-  orderCompletedQuantity: z.coerce.number().int().min(0).optional(),
-  dueDate: z.coerce.date(),
-  orderStatus: z.string().trim().min(1).optional(),
   partCode: z.string().trim().min(1),
-  partName: z.string().trim().min(1),
-  partPlannedQuantity: z.coerce.number().int().positive(),
-  partCompletedQuantity: z.coerce.number().int().min(0).optional(),
   operationCode: z.string().trim().min(1),
   operationName: z.string().trim().min(1),
-  operationNote: z.string().trim().optional(),
-  plannedQuantity: z.coerce.number().int().positive(),
-  plannedStart: z.coerce.date().optional(),
-  remainingQuantity: z.coerce.number().int().min(0).optional(),
-  estimatedHours: z.coerce.number().positive(),
-  maxClaimWorkers: z.coerce.number().int().positive().nullable().optional(),
-  status: z.enum(["available", "claimed", "closed"]).optional(),
-  source: z.string().trim().min(1).optional()
+  quantity: z.coerce.number().int().positive(),
+  estimatedHours: z.coerce.number().positive()
 });
 
-const importOperationsSchema = z.union([
-  z.array(importOperationSchema).min(1).max(MAX_IMPORT_OPERATIONS),
-  z.object({ operations: z.array(importOperationSchema).min(1).max(MAX_IMPORT_OPERATIONS) })
-]);
+const leaderImportSchema = z.object({
+  rows: z.array(leaderImportRowSchema).min(1).max(MAX_IMPORT_OPERATIONS)
+});
+
+const parseThirdPartyImportPayload = (body: unknown) => {
+  const payload = thirdPartyImportSchema.parse(body);
+  return Array.isArray(payload) ? payload : payload.operations;
+};
+
+const convertLeaderRowsToThirdPartyOperations = (body: unknown) => {
+  const payload = leaderImportSchema.parse(body);
+  return payload.rows.map((row) => ({
+    orderNo: row.productCode,
+    productCode: row.productCode,
+    productName: row.productCode,
+    partNo: row.partCode,
+    partCode: row.partCode,
+    partName: row.partCode,
+    operationNo: row.operationCode,
+    operationCode: row.operationCode,
+    operationName: row.operationName,
+    estimatedHours: row.estimatedHours,
+    plannedQuantity: row.quantity,
+    dueDate: null
+  }));
+};
+
+const isThirdPartyImportPayload = (body: unknown) =>
+  Array.isArray(body) || (typeof body === "object" && body !== null && "operations" in body);
 
 workReportRouter.get(
   "/me/capabilities",
@@ -198,9 +243,19 @@ workReportRouter.post(
   "/leader/operations/import",
   requireCapability("canImportOperations"),
   asyncHandler(async (req, res) => {
-    const payload = importOperationsSchema.parse(req.body);
-    const operations = Array.isArray(payload) ? payload : payload.operations;
-    res.json(await workReportService.importOperations(operations, requireUser(req)));
+    const operations = isThirdPartyImportPayload(req.body)
+      ? parseThirdPartyImportPayload(req.body)
+      : convertLeaderRowsToThirdPartyOperations(req.body);
+    res.json(await workReportService.importThirdPartyOperations(operations, requireUser(req)));
+  })
+);
+
+workReportRouter.post(
+  "/api/operations/import",
+  requireCapability("canImportOperations"),
+  asyncHandler(async (req, res) => {
+    const operations = parseThirdPartyImportPayload(req.body);
+    res.json(await workReportService.importThirdPartyOperations(operations, requireUser(req)));
   })
 );
 

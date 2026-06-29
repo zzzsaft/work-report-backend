@@ -6,3 +6,5 @@ dist
 coverage
 *.7z
 *.rar
+.DS_Store
+._*

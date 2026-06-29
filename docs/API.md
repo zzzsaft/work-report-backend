@@ -46,9 +46,11 @@ IMPORT_SIGNATURE_TTL_SECONDS=300
 | `leader` | `worker` 能力，加上查看管理信息、导入工序、查看异常 |
 | `admin` | 所有管理能力，包括分配员工、强制移除分配 |
 
+前端不要直接写死角色判断，建议登录后调用 `GET /me/capabilities`，用返回的能力字段控制页面入口、按钮和接口调用。后端仍会在受保护接口上做权限校验，前端隐藏入口只是改善体验。
+
 ## 后端导入签名
 
-`POST /leader/operations/import` 支持其他后端系统调用。推荐用 HTTPS + HMAC-SHA256 签名，不建议自己做请求体加密：
+`POST /api/operations/import` 和 `POST /leader/operations/import` 支持其他后端系统调用。推荐第三方系统调用 `/api/operations/import`，并使用 HTTPS + HMAC-SHA256 签名：
 
 - HTTPS 负责传输加密。
 - HMAC 负责确认调用方身份、请求体未被篡改、请求没有过期。
@@ -95,17 +97,16 @@ const body = JSON.stringify({
       orderNo: "WO-20260625-001",
       productCode: "CP-001",
       productName: "产品A",
-      orderPlannedQuantity: 100,
-      dueDate: "2026-06-30",
+      partNo: "1",
       partCode: "PART-001",
       partName: "零件A",
-      partPlannedQuantity: 100,
+      operationNo: "10",
       operationCode: "OP-010",
       operationName: "粗加工",
-      plannedQuantity: 100,
-      plannedStart: "2026-06-25T09:00:00+08:00",
+      operationNote: "注意装夹方向",
       estimatedHours: 2.5,
-      maxClaimWorkers: 2
+      plannedQuantity: 100,
+      dueDate: "2026-06-30"
     }
   ]
 });
@@ -114,7 +115,7 @@ const signature = createHmac("sha256", secret)
   .update(`${timestamp}.${nonce}.${body}`)
   .digest("hex");
 
-const response = await fetch("http://localhost:8080/leader/operations/import", {
+const response = await fetch("http://localhost:8080/api/operations/import", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
@@ -142,7 +143,7 @@ String apiKey = System.getenv("IMPORT_API_KEY");
 String secret = System.getenv("IMPORT_API_SECRET");
 String timestamp = String.valueOf(System.currentTimeMillis());
 String nonce = UUID.randomUUID().toString();
-String body = "{\"operations\":[{\"orderNo\":\"WO-20260625-001\",\"productCode\":\"CP-001\",\"productName\":\"产品A\",\"orderPlannedQuantity\":100,\"dueDate\":\"2026-06-30\",\"partCode\":\"PART-001\",\"partName\":\"零件A\",\"partPlannedQuantity\":100,\"operationCode\":\"OP-010\",\"operationName\":\"粗加工\",\"plannedQuantity\":100,\"estimatedHours\":2.5}]}";
+String body = "{\"operations\":[{\"orderNo\":\"WO-20260625-001\",\"productCode\":\"CP-001\",\"productName\":\"产品A\",\"partNo\":\"1\",\"partCode\":\"PART-001\",\"partName\":\"零件A\",\"operationNo\":\"10\",\"operationCode\":\"OP-010\",\"operationName\":\"粗加工\",\"estimatedHours\":2.5,\"plannedQuantity\":100,\"dueDate\":\"2026-06-30\"}]}";
 
 Mac mac = Mac.getInstance("HmacSHA256");
 mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
@@ -192,6 +193,18 @@ GET /me/capabilities
 }
 ```
 
+前端建议缓存该响应到全局状态，并在刷新页面时重新拉取一次。常用映射：
+
+| 能力 | 前端用途 |
+| --- | --- |
+| `canViewAdmin` | 显示管理端入口、工单列表入口 |
+| `canAssignWorkers` | 显示员工搜索、派工相关入口 |
+| `canReviewExceptions` | 显示异常列表和处理入口 |
+| `canImportOperations` | 显示工序导入入口，允许调用导入接口 |
+| `canViewTeamOperations` | 显示班组/团队工序视图入口 |
+| `canForceRemoveAssignments` | 显示强制移除分配按钮 |
+| `canViewAllTeams` | 显示全班组筛选或全局视图 |
+
 ### 我的工序任务
 
 ```http
@@ -235,6 +248,7 @@ GET /claim/products/:productId/parts
   {
     "id": "partId",
     "productId": "workOrderId",
+    "partNo": "1",
     "partCode": "PART-001",
     "partName": "零件A",
     "operationCount": 2,
@@ -260,8 +274,10 @@ GET /claim/parts/:partId/operations
     "orderNo": "WO-20260625-001",
     "productCode": "CP-001",
     "productName": "产品A",
+    "partNo": "1",
     "partCode": "PART-001",
     "partName": "零件A",
+    "operationNo": "10",
     "operationCode": "OP-010",
     "operationName": "粗加工",
     "operationNote": "",
@@ -383,10 +399,14 @@ GET /admin/workers?keyword=<关键字>&page=1&pageSize=20
 POST /leader/operations/import
 ```
 
-需要 `canImportOperations`，或者使用“后端导入签名”。
-单次最多导入 `1000` 条工序。
+```http
+POST /api/operations/import
+```
 
-请求体支持对象：
+需要 `canImportOperations`，或者使用“后端导入签名”。第三方系统推荐调用 `/api/operations/import`；前端管理页面可以继续调用 `/leader/operations/import`。
+单次最多导入 `40000` 条工序。服务端按 `1000` 条一批写入数据库。
+
+`/api/operations/import` 支持对象：
 
 ```json
 {
@@ -395,24 +415,16 @@ POST /leader/operations/import
       "orderNo": "WO-20260625-001",
       "productCode": "CP-001",
       "productName": "产品A",
-      "orderPlannedQuantity": 100,
-      "orderCompletedQuantity": 0,
-      "dueDate": "2026-06-30",
-      "orderStatus": "in_progress",
+      "partNo": "1",
       "partCode": "PART-001",
       "partName": "零件A",
-      "partPlannedQuantity": 100,
-      "partCompletedQuantity": 0,
+      "operationNo": "10",
       "operationCode": "OP-010",
       "operationName": "粗加工",
       "operationNote": "注意装夹方向",
-      "plannedQuantity": 100,
-      "plannedStart": "2026-06-25T09:00:00+08:00",
-      "remainingQuantity": 100,
       "estimatedHours": 2.5,
-      "maxClaimWorkers": 2,
-      "status": "available",
-      "source": "mes"
+      "plannedQuantity": 100,
+      "dueDate": "2026-06-30"
     }
   ]
 }
@@ -426,18 +438,37 @@ POST /leader/operations/import
     "orderNo": "WO-20260625-001",
     "productCode": "CP-001",
     "productName": "产品A",
-    "orderPlannedQuantity": 100,
-    "dueDate": "2026-06-30",
+    "partNo": "1",
     "partCode": "PART-001",
     "partName": "零件A",
-    "partPlannedQuantity": 100,
+    "operationNo": "10",
     "operationCode": "OP-010",
     "operationName": "粗加工",
+    "estimatedHours": 2.5,
     "plannedQuantity": 100,
-    "estimatedHours": 2.5
+    "dueDate": null
   }
 ]
 ```
+
+`/leader/operations/import` 额外兼容旧前端的简化格式：
+
+```json
+{
+  "rows": [
+    {
+      "productCode": "CP-001",
+      "partCode": "PART-001",
+      "operationCode": "OP-010",
+      "operationName": "粗加工",
+      "quantity": 100,
+      "estimatedHours": 2.5
+    }
+  ]
+}
+```
+
+该兼容格式会自动映射为第三方导入格式：`orderNo`/`productName` 使用 `productCode`，`partNo`/`partName` 使用 `partCode`，`operationNo` 使用 `operationCode`，`plannedQuantity` 使用 `quantity`，`dueDate` 为 `null`。
 
 字段说明：
 
@@ -446,24 +477,16 @@ POST /leader/operations/import
 | `orderNo` | 是 | 工单号，唯一 |
 | `productCode` | 是 | 产品编码 |
 | `productName` | 是 | 产品名称 |
-| `orderPlannedQuantity` | 是 | 工单计划数量，正整数 |
-| `orderCompletedQuantity` | 否 | 工单已完成数量，默认 `0` |
-| `dueDate` | 是 | 工单交期 |
-| `orderStatus` | 否 | 工单状态，默认 `in_progress` |
+| `partNo` | 是 | 零件序号，字符串或数字都会按字符串保存 |
 | `partCode` | 是 | 零件编码，同一工单内唯一 |
 | `partName` | 是 | 零件名称 |
-| `partPlannedQuantity` | 是 | 零件计划数量，正整数 |
-| `partCompletedQuantity` | 否 | 零件已完成数量，默认 `0` |
+| `operationNo` | 是 | 工序序号，字符串或数字都会按字符串保存 |
 | `operationCode` | 是 | 工序业务编号，同一工单、同一零件下唯一 |
 | `operationName` | 是 | 工序名称 |
 | `operationNote` | 否 | 工序备注，默认空字符串 |
-| `plannedQuantity` | 是 | 工序计划数量，正整数 |
-| `plannedStart` | 否 | 计划开始时间 |
-| `remainingQuantity` | 否 | 剩余数量，默认等于 `plannedQuantity` |
 | `estimatedHours` | 是 | 预计工时，正数 |
-| `maxClaimWorkers` | 否 | 最大领取人数，正整数或 `null` |
-| `status` | 否 | `available`、`claimed`、`closed`，默认 `available` |
-| `source` | 否 | 来源系统，默认 `import` |
+| `plannedQuantity` | 否 | 工序计划数量，正数，默认 `1` |
+| `dueDate` | 否 | 工单交期，支持 `YYYY-MM-DD`、`YYYY/MM/DD`、`YYYY-MM-DDTHH:mm:ss`、`YYYY-MM-DDTHH:mm:ss.SSSZ`；为空或 `null` 时使用导入当天 |
 
 响应：
 
@@ -484,7 +507,7 @@ POST /leader/operations/import
 }
 ```
 
-导入是逐行事务：某一行失败不会回滚其他行。失败行会进入 `errors`。
+导入按批次事务写入：某一批失败会把该批内行写入 `errors`，其他批次不受影响。导入是幂等 upsert：同一个 `orderNo + partCode + operationCode` 再次导入会更新工单、零件和工序信息。导入后的工序状态为 `available`，来源为 `third_party`。
 
 ## 已挂载但暂未实现的接口
 
@@ -515,6 +538,7 @@ POST /leader/operations/import
   id: string;
   workOrderId: string;
   partId: string;
+  operationNo?: string | null;
   operationCode: string;
   operationName: string;
   operationNote: string;
@@ -530,10 +554,12 @@ POST /leader/operations/import
 }
 ```
 
+零件存储在 `WorkOrderPart`，其中 `partNo` 是展示/排序用的零件序号，`partCode` 是同一工单内的业务唯一编码。
+
 唯一约束：
 
 ```ts
 workOrderId + partId + operationCode
 ```
 
-所以系统工序 ID 是 `id`，外部业务系统更适合用 `orderNo + partCode + operationCode` 作为幂等导入键。
+所以系统工序 ID 是 `id`，外部业务系统更适合用 `orderNo + partCode + operationCode` 作为幂等导入键。`partNo` 和 `operationNo` 会返回给前端用于展示和数字排序，但不参与唯一约束。

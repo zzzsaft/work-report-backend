@@ -11,7 +11,7 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["node", "vitest"]
+    "types": ["node"]
   },
-  "include": ["src", "prisma", "tests", "prisma.config.ts"]
+  "include": ["src", "prisma", "prisma.config.ts"]
 }

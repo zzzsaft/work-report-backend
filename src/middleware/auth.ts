@@ -170,7 +170,7 @@ const upsertAuthenticatedUser = async (authUser: AuthServiceUser): Promise<Authe
 
   const user = await prisma.user.findUnique({
     where: { id: authUser.userId },
-    include: { roles: { include: { role: true } } }
+    include: { userRoles: { include: { role: true } } }
   });
 
   if (!user) throw new AppError(401, "token 缺失或失效");
@@ -179,7 +179,7 @@ const upsertAuthenticatedUser = async (authUser: AuthServiceUser): Promise<Authe
     id: user.id,
     name: user.name,
     avatar: user.avatar ?? undefined,
-    roles: user.roles.map((item) => item.role.code)
+    roles: user.userRoles.map((item) => item.role.code)
   };
 };
 
@@ -219,7 +219,10 @@ const resolveUser = async (token: string) => {
 
 export const authenticate: RequestHandler = async (req, _res, next) => {
   try {
-    const importUser = req.path === "/leader/operations/import" ? verifyImportSignature(req) : null;
+    const isImportPath = 
+      req.path === "/leader/operations/import" || 
+      req.path === "/api/operations/import";
+    const importUser = isImportPath ? verifyImportSignature(req) : null;
     if (importUser) {
       req.user = importUser;
       next();

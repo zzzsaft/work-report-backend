@@ -2,12 +2,13 @@ import "dotenv/config";
 import { existsSync } from "node:fs";
 import { defineConfig, env } from "prisma/config";
 
-const schemaPath = existsSync("prisma") ? "prisma" : "dist/prisma";
+const schemaDir = existsSync("prisma/schema.prisma") ? "prisma" : "dist/prisma";
+const schemaPath = `${schemaDir}/schema.prisma`;
 
 export default defineConfig({
   schema: schemaPath,
   migrations: {
-    path: `${schemaPath}/migrations`,
+    path: `${schemaDir}/migrations`,
     seed: "tsx prisma/seed.ts"
   },
   datasource: {

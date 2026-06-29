@@ -15,6 +15,13 @@ import {
   serializeProduct,
   serializeWorkOrder
 } from "./serializers.js";
+import {
+  MAX_IMPORT_OPERATIONS,
+  WorkReportImportService,
+  type ThirdPartyImportOperation
+} from "./import-service.js";
+
+export { MAX_IMPORT_OPERATIONS, type ThirdPartyImportOperation };
 
 const assignmentInclude = {
   workOrder: true,
@@ -53,36 +60,14 @@ const getPeriodRange = (period: string, now = new Date()) => {
 const getDateKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
-export const MAX_IMPORT_OPERATIONS = 1000;
-
 const CLAIM_CONFLICT_MESSAGE = "该工序领取状态已变化，请重试";
 
-export interface ImportOperationInput {
-  orderNo: string;
-  productCode: string;
-  productName: string;
-  orderPlannedQuantity: number;
-  orderCompletedQuantity?: number;
-  dueDate: Date;
-  orderStatus?: string;
-  partCode: string;
-  partName: string;
-  partPlannedQuantity: number;
-  partCompletedQuantity?: number;
-  operationCode: string;
-  operationName: string;
-  operationNote?: string;
-  plannedQuantity: number;
-  plannedStart?: Date;
-  remainingQuantity?: number;
-  estimatedHours: number;
-  maxClaimWorkers?: number | null;
-  status?: string;
-  source?: string;
-}
-
 export class WorkReportService {
-  constructor(private readonly db: PrismaClient = prisma) {}
+  private readonly importService: WorkReportImportService;
+
+  constructor(private readonly db: PrismaClient = prisma) {
+    this.importService = new WorkReportImportService(db);
+  }
 
   getAssignments = async (user: AuthenticatedUser) => {
     const assignments = await this.db.operationAssignment.findMany({
@@ -134,11 +119,10 @@ export class WorkReportService {
         operationPools: {
           where: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } }
         }
-      },
-      orderBy: { partCode: "asc" }
+      }
     });
 
-    return parts.map(serializePart);
+    return parts.sort((a, b) => Number(a.partNo || 0) - Number(b.partNo || 0)).map(serializePart);
   };
 
   getClaimableOperations = async (partId: string) => {
@@ -147,11 +131,10 @@ export class WorkReportService {
         partId,
         status: { in: [...CLAIMABLE_OPERATION_STATUSES] }
       },
-      include: { workOrder: true, part: true },
-      orderBy: [{ plannedStart: "asc" }, { operationCode: "asc" }]
+      include: { workOrder: true, part: true }
     });
 
-    return operations.map(serializeOperation);
+    return operations.sort((a, b) => Number(a.operationNo || 0) - Number(b.operationNo || 0)).map(serializeOperation);
   };
 
   claimOperation = async (operationId: string, user: AuthenticatedUser) => {
@@ -334,124 +317,6 @@ export class WorkReportService {
     };
   };
 
-  importOperations = async (operations: ImportOperationInput[], user: AuthenticatedUser) => {
-    if (operations.length > MAX_IMPORT_OPERATIONS) {
-      throw new AppError(400, `单次最多导入 ${MAX_IMPORT_OPERATIONS} 条工序`);
-    }
-
-    const results = [];
-    const errors = [];
-
-    for (const [index, item] of operations.entries()) {
-      try {
-        const result = await this.db.$transaction(async (tx) => {
-          const workOrder = await tx.workOrder.upsert({
-            where: { orderNo: item.orderNo },
-            create: {
-              orderNo: item.orderNo,
-              productCode: item.productCode,
-              productName: item.productName,
-              plannedQuantity: item.orderPlannedQuantity,
-              completedQuantity: item.orderCompletedQuantity ?? 0,
-              dueDate: item.dueDate,
-              status: item.orderStatus ?? "in_progress"
-            },
-            update: {
-              productCode: item.productCode,
-              productName: item.productName,
-              plannedQuantity: item.orderPlannedQuantity,
-              completedQuantity: item.orderCompletedQuantity,
-              dueDate: item.dueDate,
-              status: item.orderStatus
-            }
-          });
-
-          const part = await tx.workOrderPart.upsert({
-            where: {
-              workOrderId_partCode: {
-                workOrderId: workOrder.id,
-                partCode: item.partCode
-              }
-            },
-            create: {
-              workOrderId: workOrder.id,
-              partCode: item.partCode,
-              partName: item.partName,
-              plannedQuantity: item.partPlannedQuantity,
-              completedQuantity: item.partCompletedQuantity ?? 0
-            },
-            update: {
-              partName: item.partName,
-              plannedQuantity: item.partPlannedQuantity,
-              completedQuantity: item.partCompletedQuantity
-            }
-          });
-
-          const remainingQuantity = item.remainingQuantity ?? item.plannedQuantity;
-          const operation = await tx.operationPool.upsert({
-            where: {
-              workOrderId_partId_operationCode: {
-                workOrderId: workOrder.id,
-                partId: part.id,
-                operationCode: item.operationCode
-              }
-            },
-            create: {
-              workOrderId: workOrder.id,
-              partId: part.id,
-              operationCode: item.operationCode,
-              operationName: item.operationName,
-              operationNote: item.operationNote ?? "",
-              plannedQuantity: item.plannedQuantity,
-              plannedStart: item.plannedStart,
-              remainingQuantity,
-              estimatedHours: item.estimatedHours,
-              maxClaimWorkers: item.maxClaimWorkers,
-              status: item.status ?? OPERATION_POOL_STATUS.available,
-              source: item.source ?? "import",
-              createdBy: user.id
-            },
-            update: {
-              operationName: item.operationName,
-              operationNote: item.operationNote ?? "",
-              plannedQuantity: item.plannedQuantity,
-              plannedStart: item.plannedStart,
-              remainingQuantity,
-              estimatedHours: item.estimatedHours,
-              maxClaimWorkers: item.maxClaimWorkers,
-              status: item.status,
-              source: item.source ?? "import"
-            }
-          });
-
-          return {
-            row: index + 1,
-            operationId: operation.id,
-            orderNo: workOrder.orderNo,
-            partCode: part.partCode,
-            operationCode: operation.operationCode
-          };
-        });
-        results.push(result);
-      } catch (error) {
-        errors.push({
-          row: index + 1,
-          orderNo: item.orderNo,
-          partCode: item.partCode,
-          operationCode: item.operationCode,
-          message: error instanceof Error ? error.message : "导入失败"
-        });
-      }
-    }
-
-    return {
-      accepted: results.length,
-      rejected: errors.length,
-      items: results,
-      errors
-    };
-  };
-
   searchWorkers = async (keyword = "", page = 1, pageSize = 20) => {
     const safePage = Math.max(page, 1);
     const safePageSize = Math.min(Math.max(pageSize, 1), 100);
@@ -495,6 +360,9 @@ export class WorkReportService {
       hasMore: users.length > safePageSize
     };
   };
+
+  importThirdPartyOperations = (operations: ThirdPartyImportOperation[], user: AuthenticatedUser) =>
+    this.importService.importThirdPartyOperations(operations, user);
 }
 
 export const workReportService = new WorkReportService();
