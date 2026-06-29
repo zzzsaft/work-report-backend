@@ -1,7 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
 import { AppError, asyncHandler } from "../../lib/errors.js";
-import { getCapabilitiesForRoles, requireCapability } from "../../middleware/auth.js";
+import {
+  getCapabilitiesForRoles,
+  requireCapability,
+  requirePermissionManagement
+} from "../../middleware/auth.js";
 import { MAX_IMPORT_OPERATIONS, workReportService } from "./service.js";
 
 const dateStringSchema = z.string().refine(
@@ -61,6 +65,11 @@ const leaderImportRowSchema = z.object({
 
 const leaderImportSchema = z.object({
   rows: z.array(leaderImportRowSchema).min(1).max(MAX_IMPORT_OPERATIONS)
+});
+
+const permissionGroupSchema = z.enum(["worker", "leader", "admin"]);
+const updateWorkerPermissionSchema = z.object({
+  permissionGroup: permissionGroupSchema
 });
 
 const parseThirdPartyImportPayload = (body: unknown) => {
@@ -212,6 +221,25 @@ workReportRouter.get(
       })
       .parse(req.query);
     res.json(await workReportService.searchWorkers(query.keyword, query.page, query.pageSize));
+  })
+);
+
+workReportRouter.get(
+  "/admin/worker-permissions",
+  requirePermissionManagement,
+  asyncHandler(async (_req, res) => {
+    res.json(await workReportService.getWorkerPermissions());
+  })
+);
+
+workReportRouter.patch(
+  "/admin/workers/:workerId/permission",
+  requirePermissionManagement,
+  asyncHandler(async (req, res) => {
+    const body = updateWorkerPermissionSchema.parse(req.body);
+    res.json(
+      await workReportService.updateWorkerPermission(req.params.workerId, body.permissionGroup)
+    );
   })
 );
 

@@ -33,7 +33,20 @@ export const config = {
   corsOrigin: corsOriginFromEnv("CORS_ORIGIN"),
   corsCredentials: booleanFromEnv("CORS_CREDENTIALS", true),
   authCookieName: process.env.AUTH_COOKIE_NAME || "auth_token",
+  authCookieSecure: booleanFromEnv("AUTH_COOKIE_SECURE", process.env.NODE_ENV === "production"),
   authCacheTtlSeconds: numberFromEnv("AUTH_CACHE_TTL_SECONDS", 300),
+  jwtSecret: process.env.JWT_SECRET || "",
+  authTokenTtl: process.env.AUTH_TOKEN_TTL || "30m",
+  authClientIds: (process.env.AUTH_CLIENT_IDS || "legacy-frontend,new-frontend")
+    .split(",")
+    .map((clientId) => clientId.trim())
+    .filter(Boolean),
+  wecomApiBaseUrl: process.env.WECOM_API_BASE_URL || "https://qyapi.weixin.qq.com",
+  wechatProxyHost:
+    process.env.WECHAT_PROXY_HOST ||
+    process.env.JCTIMES_WECHAT_PROXY_HOST ||
+    "http://122.226.146.110:780",
+  wechatProxyCryptoSecret: process.env.WECHAT_PROXY_CRYPTO_SECRET || "",
   allowMockToken: booleanFromEnv("ALLOW_MOCK_TOKEN", false),
   mockAuthToken: process.env.MOCK_AUTH_TOKEN || "mock-token",
   mockUserId: process.env.MOCK_USER_ID || "demo-worker",
@@ -44,5 +57,9 @@ export const config = {
     .filter(Boolean),
   importApiKey: process.env.IMPORT_API_KEY || "",
   importApiSecret: process.env.IMPORT_API_SECRET || "",
-  importSignatureTtlSeconds: numberFromEnv("IMPORT_SIGNATURE_TTL_SECONDS", 300)
+  importSignatureTtlSeconds: numberFromEnv("IMPORT_SIGNATURE_TTL_SECONDS", 300),
+  xftHost: process.env.XFT_HOST || "https://api.cmbchina.com",
+  xftAppid: process.env.XFT_APPID || "",
+  xftAuthoritySecret: process.env.XFT_AUTHORITY_SECRET || "",
+  xftEnterpriseId: process.env.XFT_ENTERPRISE_ID || ""
 };

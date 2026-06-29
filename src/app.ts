@@ -6,7 +6,9 @@ import { errorHandler, notFoundHandler } from "./lib/errors.js";
 import { installAxiosLogger } from "./lib/axios-logger.js";
 import { authenticate } from "./middleware/auth.js";
 import { expressLogger } from "./middleware/express-logger.js";
+import { authRouter } from "./modules/auth/routes.js";
 import { workReportRouter } from "./modules/work-report/routes.js";
+import { xftRouter } from "./modules/xft/routes.js";
 
 installAxiosLogger();
 
@@ -37,8 +39,10 @@ export const createApp = () => {
     res.json({ ok: true });
   });
 
+  app.use(authRouter);
   app.use(authenticate);
   app.use(workReportRouter);
+  app.use(xftRouter);
   app.use(notFoundHandler);
   app.use(errorHandler);
 

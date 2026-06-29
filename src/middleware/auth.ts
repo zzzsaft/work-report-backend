@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { config } from "../lib/config.js";
 import { AppError } from "../lib/errors.js";
+import { verifyLocalToken } from "../lib/jwt.js";
 import { prisma } from "../lib/prisma.js";
 
 interface AuthServiceUser {
@@ -183,7 +184,7 @@ const upsertAuthenticatedUser = async (authUser: AuthServiceUser): Promise<Authe
   };
 };
 
-const resolveUser = async (token: string) => {
+export const resolveUser = async (token: string) => {
   const cacheKey = hashCacheKey(token);
   const cached = authCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.user;
@@ -206,7 +207,14 @@ const resolveUser = async (token: string) => {
     return mockUser;
   }
 
-  const authUser = await fetchUserFromAuthService(token);
+  const localUser = verifyLocalToken(token);
+  const authUser = localUser
+    ? {
+        userId: localUser.userId,
+        name: localUser.name || localUser.userId,
+        avatar: localUser.avatar ?? undefined
+      }
+    : await fetchUserFromAuthService(token);
   const user = await upsertAuthenticatedUser(authUser);
   pruneExpiredEntries(authCache);
   authCache.set(cacheKey, {
@@ -254,6 +262,25 @@ export const requireCapability = (capability: keyof ReturnType<typeof getCapabil
     }
     next();
   };
+};
+
+export const requirePermissionManagement: RequestHandler = (req, _res, next) => {
+  if (!req.user) {
+    next(new AppError(401, "token 缺失或失效"));
+    return;
+  }
+
+  const capabilities = getCapabilitiesForRoles(req.user.roles);
+  if (
+    !capabilities.canAssignWorkers ||
+    !capabilities.canForceRemoveAssignments ||
+    !capabilities.canViewAllTeams
+  ) {
+    next(new AppError(403, "当前用户无权限"));
+    return;
+  }
+
+  next();
 };
 
 export const getCapabilitiesForRoles = (roles: string[]) => {

@@ -50,6 +50,27 @@ model AxiosRequestLog {
   @@schema("work_report")
 }
 
+model XftIntegrationConfig {
+  id                    String   @id @default("default")
+  host                  String
+  appid                 String
+  appSecret             String   @map("app_secret")
+  enterpriseId          String   @map("enterprise_id")
+  defaultUserId         String   @default("U0000") @map("default_user_id")
+  defaultPlatformUserId String   @default("AUTO0001") @map("default_platform_user_id")
+  dataCollectionName    String   @map("data_collection_name")
+  importType            String   @default("ADD") @map("import_type")
+  salaryPeriod          String   @map("salary_period")
+  workHoursFieldKey     String   @map("work_hours_field_key")
+  isCheckEmpty          Boolean  @default(false) @map("is_check_empty")
+  enabled               Boolean  @default(true)
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("xft_integration_configs")
+  @@schema("work_report")
+}
+
 model User {
   id                String               @id @default(cuid())
   wecomUserId       String?              @map("wecom_user_id")

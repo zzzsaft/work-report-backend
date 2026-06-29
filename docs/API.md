@@ -19,7 +19,14 @@ PORT=8080
 CORS_ORIGIN="http://localhost:5173,https://app.xinfatech.xyz:2011"
 CORS_CREDENTIALS=true
 AUTH_COOKIE_NAME=auth_token
+AUTH_COOKIE_SECURE=false
 AUTH_CACHE_TTL_SECONDS=300
+JWT_SECRET=
+AUTH_TOKEN_TTL=30m
+AUTH_CLIENT_IDS=legacy-frontend,new-frontend
+WECHAT_AUTH_ALLOWED_ORIGINS="http://localhost:5173,https://app.xinfatech.xyz:2011"
+WECHAT_PROXY_HOST="http://122.226.146.110:780"
+WECHAT_PROXY_CRYPTO_SECRET=
 ALLOW_MOCK_TOKEN=false
 MOCK_AUTH_TOKEN=mock-token
 MOCK_USER_ID=demo-worker
@@ -30,11 +37,125 @@ MOCK_USER_ROLES=worker
 IMPORT_API_KEY=
 IMPORT_API_SECRET=
 IMPORT_SIGNATURE_TTL_SECONDS=300
+
+# 薪福通默认配置，可在前端管理页保存覆盖
+XFT_HOST="https://api.cmbchina.com"
+XFT_APPID=
+XFT_AUTHORITY_SECRET=
+XFT_ENTERPRISE_ID=
 ```
 
 `IMPORT_API_SECRET` 只在服务端保存，不要发给前端、客户端或第三方页面。
 
 `CORS_ORIGIN` 支持多个地址，用英文逗号分隔。地址需要和浏览器请求里的 Origin 完全一致，包括协议、域名和端口。
+
+`JWT_SECRET` 用于本后端签发和校验登录 token。要让前端的 `VITE_AUTH_API_BASE_URL` 指向本服务，并兼容参考 `jdy_backend` 旧 token，两个后端需要配置相同的 `JWT_SECRET`。`AUTH_CLIENT_IDS` 兼容参考项目默认的 `legacy-frontend,new-frontend`。
+
+企业微信登录还需要配置认证客户端。推荐在服务根目录放 `wechat.json`，格式见 [wechat.example.json](../wechat.example.json)：
+
+```json
+[
+  {
+    "corpId": "wwxxxxxxxxxxxxxxxx",
+    "name": "jctimes",
+    "apps": [
+      {
+        "agentId": 1000044,
+        "corpSecret": "replace-with-secret",
+        "name": "CRM",
+        "clientId": "legacy-frontend",
+        "allowedOrigins": ["https://app.example.com"],
+        "scopes": []
+      }
+    ]
+  }
+]
+```
+
+也可以用 `WECHAT_AUTH_CLIENTS` 放同样的 JSON。简单部署时可用 `WECOM_LEGACY_CORP_ID`、`WECOM_LEGACY_AGENT_ID`、`WECOM_LEGACY_CORP_SECRET` 配 `legacy-frontend`，用 `WECOM_NEW_CORP_ID`、`WECOM_NEW_AGENT_ID`、`WECOM_NEW_CORP_SECRET` 配 `new-frontend`。
+
+`WECHAT_AUTH_ALLOWED_ORIGINS` 是登录接口允许的浏览器 Origin，多个地址用英文逗号分隔；也可以在 `wechat.json` 每个 app 的 `allowedOrigins` 单独配置。`AUTH_COOKIE_SECURE=true` 时 Cookie 只会在 HTTPS 下写入，开发环境通常设为 `false`。
+
+如果当前服务器出口 IP 没有加入企业微信可信 IP，需要像参考 `jdy_backend/src/api/jctimes` 一样走 jctimes 微信代理。配置 `WECHAT_PROXY_HOST` 和 `WECHAT_PROXY_CRYPTO_SECRET` 后，本服务会把 `/cgi-bin/gettoken`、`/cgi-bin/auth/getuserinfo`、`/cgi-bin/user/get` 通过 `POST <WECHAT_PROXY_HOST>/wechat/proxy` 转发，协议为 AES-256-GCM 加密 JSON，和参考项目一致。未配置 `WECHAT_PROXY_CRYPTO_SECRET` 时才会直连 `WECOM_API_BASE_URL`。
+
+## 身份验证接口
+
+### 企业微信 code 换 token
+
+```http
+POST /auth/wecom/token
+```
+
+请求体：
+
+```json
+{
+  "clientId": "new-frontend",
+  "code": "企业微信 OAuth code"
+}
+```
+
+响应：
+
+```json
+{
+  "token": "jwt...",
+  "user": {
+    "userId": "LiangZhi",
+    "corpId": "wwxxxxxxxxxxxxxxxx",
+    "clientId": "new-frontend",
+    "name": "梁之",
+    "avatar": "https://..."
+  }
+}
+```
+
+服务端会同时写入 `auth_token` Cookie。前端也可以使用响应里的 `token` 作为 `Authorization: Bearer <token>`。
+
+旧前端兼容接口：
+
+```http
+POST /auth/token
+```
+
+请求体只需要 `{ "code": "企业微信 OAuth code" }`，默认使用 `legacy-frontend` 客户端。
+
+### 当前登录用户
+
+```http
+GET /auth/me
+```
+
+支持 `Authorization: Bearer <token>` 或 `auth_token` Cookie。服务端会优先按本地 JWT 校验，兼容 `jdy_backend` 的 `issuer=jdy-backend`、`audience=legacy-frontend|new-frontend` token；若不是本地 JWT，则回落到 `AUTH_API_BASE_URL/auth/me`。
+
+响应示例：
+
+```json
+{
+  "userId": "worker-1",
+  "name": "张师傅",
+  "avatar": null,
+  "roles": ["worker"],
+  "capabilities": {
+    "roles": ["worker"],
+    "canViewAdmin": false,
+    "canAssignWorkers": false,
+    "canReviewExceptions": false,
+    "canImportOperations": false,
+    "canViewTeamOperations": false,
+    "canForceRemoveAssignments": false,
+    "canViewAllTeams": false
+  }
+}
+```
+
+### 退出登录
+
+```http
+POST /auth/logout
+```
+
+清除 `auth_token` Cookie，成功返回 `204 No Content`。
 
 ## 角色和能力
 
@@ -393,6 +514,60 @@ GET /admin/workers?keyword=<关键字>&page=1&pageSize=20
 }
 ```
 
+### 管理端权限编辑
+
+```http
+GET /admin/worker-permissions
+```
+
+需要 admin 级能力：`canAssignWorkers && canForceRemoveAssignments && canViewAllTeams`。
+
+响应字段：
+
+```json
+[
+  {
+    "id": "workerId",
+    "workerId": "workerId",
+    "employeeNo": "EMP-001",
+    "name": "张师傅",
+    "nameInitials": "zsf",
+    "teamName": "生产一组",
+    "permissionGroup": "worker",
+    "roles": ["worker"]
+  }
+]
+```
+
+```http
+PATCH /admin/workers/:workerId/permission
+```
+
+需要 admin 级能力：`canAssignWorkers && canForceRemoveAssignments && canViewAllTeams`。
+
+请求体：
+
+```json
+{ "permissionGroup": "worker" }
+```
+
+`permissionGroup` 可选值：`worker`、`leader`、`admin`。
+
+响应为更新后的 `WorkerPermission`：
+
+```json
+{
+  "id": "workerId",
+  "workerId": "workerId",
+  "employeeNo": "EMP-001",
+  "name": "张师傅",
+  "nameInitials": "zsf",
+  "teamName": "生产一组",
+  "permissionGroup": "leader",
+  "roles": ["leader"]
+}
+```
+
 ### 工序导入
 
 ```http
@@ -508,6 +683,76 @@ POST /api/operations/import
 ```
 
 导入按批次事务写入：某一批失败会把该批内行写入 `errors`，其他批次不受影响。导入是幂等 upsert：同一个 `orderNo + partCode + operationCode` 再次导入会更新工单、零件和工序信息。导入后的工序状态为 `available`，来源为 `third_party`。
+
+### 薪福通配置与工时导入
+
+以下接口需要 `canImportOperations`。
+
+```http
+GET /admin/xft/config
+PUT /admin/xft/config
+```
+
+配置字段：
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `host` | 是 | 薪福通 API 地址，默认 `https://api.cmbchina.com` |
+| `appid` | 是 | 应用 ID |
+| `appSecret` | 首次必填 | 应用密钥，读取配置时不返回明文；更新时留空表示保留旧值 |
+| `enterpriseId` | 是 | 企业 ID |
+| `defaultUserId` | 是 | 调用用户号，默认 `U0000` |
+| `defaultPlatformUserId` | 是 | 平台用户号，默认 `AUTO0001` |
+| `dataCollectionName` | 是 | 采集表名称 |
+| `importType` | 是 | 导入类型，例如 `ADD` |
+| `salaryPeriod` | 是 | 薪资期间，`YYYYMM` |
+| `workHoursFieldKey` | 是 | 工时写入的采集项字段名/字段标识 |
+| `isCheckEmpty` | 否 | 是否检查空值 |
+| `enabled` | 否 | 是否启用集成 |
+
+```http
+POST /admin/xft/import-hours/preview
+POST /admin/xft/import-hours
+POST /admin/xft/import-hours/manual
+```
+
+`/preview` 和 `/import-hours` 请求体：
+
+```json
+{ "salaryPeriod": "202606" }
+```
+
+后端会按薪资期间汇总 `OperationAssignment`：排除 `cancelled`，优先用 `claimedAt` 匹配期间，`claimedAt` 为空时用 `plannedStart`；员工号来自 `worker.employeeNo`，为空时使用 `workerId`；工时使用 `estimatedHours`。
+
+`/manual` 请求体：
+
+```json
+{
+  "salaryPeriod": "202606",
+  "rows": [
+    {
+      "staffName": "小灰16",
+      "staffNumber": "000002",
+      "hours": 8,
+      "identityNumber": "",
+      "staffId": ""
+    }
+  ]
+}
+```
+
+导入薪福通时会调用 `/sal/a/xft-sly/salary/api/import-collection-data`，`collectionData` 为 JSON 字符串，例如 `{"WORK_HOURS":8}`。
+
+响应：
+
+```json
+{
+  "accepted": 1,
+  "rejected": 0,
+  "items": [{ "lineId": 1, "staffName": "小灰16", "staffNumber": "000002", "hours": 8 }],
+  "errors": []
+}
+```
 
 ## 已挂载但暂未实现的接口
 

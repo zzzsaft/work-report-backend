@@ -61,6 +61,45 @@ const getDateKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 const CLAIM_CONFLICT_MESSAGE = "该工序领取状态已变化，请重试";
+const PERMISSION_GROUPS = ["worker", "leader", "admin"] as const;
+export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
+
+const roleNames: Record<PermissionGroup, string> = {
+  worker: "员工",
+  leader: "小组长",
+  admin: "管理员"
+};
+
+const getPermissionGroup = (roles: string[]): PermissionGroup => {
+  if (roles.includes("admin")) return "admin";
+  if (roles.includes("leader")) return "leader";
+  return "worker";
+};
+
+const serializeWorkerPermission = (worker: {
+  id: string;
+  employeeNo: string | null;
+  name: string;
+  nameInitials: string | null;
+  teamName: string | null;
+  userRoles: { role: { code: string } }[];
+}) => {
+  const roles = worker.userRoles
+    .map((item) => item.role.code)
+    .filter((role) => PERMISSION_GROUPS.includes(role as PermissionGroup));
+  const normalizedRoles = roles.length > 0 ? roles : ["worker"];
+
+  return {
+    id: worker.id,
+    workerId: worker.id,
+    employeeNo: worker.employeeNo || worker.id,
+    name: worker.name,
+    nameInitials: worker.nameInitials || "",
+    teamName: worker.teamName || "",
+    permissionGroup: getPermissionGroup(normalizedRoles),
+    roles: normalizedRoles
+  };
+};
 
 export class WorkReportService {
   private readonly importService: WorkReportImportService;
@@ -359,6 +398,51 @@ export class WorkReportService {
       })),
       hasMore: users.length > safePageSize
     };
+  };
+
+  getWorkerPermissions = async () => {
+    const workers = await this.db.user.findMany({
+      orderBy: [{ teamName: "asc" }, { name: "asc" }],
+      include: {
+        userRoles: {
+          include: { role: true }
+        }
+      }
+    });
+
+    return workers.map(serializeWorkerPermission);
+  };
+
+  updateWorkerPermission = async (workerId: string, permissionGroup: PermissionGroup) => {
+    const worker = await this.db.$transaction(async (tx) => {
+      const existingWorker = await tx.user.findUnique({ where: { id: workerId } });
+      if (!existingWorker) throw new AppError(404, "员工不存在");
+
+      const role = await tx.role.upsert({
+        where: { code: permissionGroup },
+        create: { code: permissionGroup, name: roleNames[permissionGroup] },
+        update: { name: roleNames[permissionGroup] }
+      });
+
+      await tx.userRole.deleteMany({ where: { userId: workerId } });
+      await tx.userRole.create({
+        data: {
+          userId: workerId,
+          roleId: role.id
+        }
+      });
+
+      return tx.user.findUniqueOrThrow({
+        where: { id: workerId },
+        include: {
+          userRoles: {
+            include: { role: true }
+          }
+        }
+      });
+    });
+
+    return serializeWorkerPermission(worker);
   };
 
   importThirdPartyOperations = (operations: ThirdPartyImportOperation[], user: AuthenticatedUser) =>
