@@ -12,6 +12,12 @@ interface AxiosLogMeta {
   startedAt: bigint;
 }
 
+const AXIOS_LOGGER_INSTALLED = Symbol.for("work-report-backend.axios-logger.installed");
+
+interface AxiosClientWithLoggerFlag extends AxiosInstance {
+  [AXIOS_LOGGER_INSTALLED]?: boolean;
+}
+
 const requestMeta = new WeakMap<InternalAxiosRequestConfig, AxiosLogMeta>();
 
 const durationFrom = (startedAt: bigint) => Number((process.hrtime.bigint() - startedAt) / 1_000_000n);
@@ -61,12 +67,16 @@ const logError = async (error: AxiosError) => {
 };
 
 export const installAxiosLogger = (client: AxiosInstance = axios) => {
-  client.interceptors.request.use((config) => {
+  const flaggedClient = client as AxiosClientWithLoggerFlag;
+  if (flaggedClient[AXIOS_LOGGER_INSTALLED]) return client;
+  flaggedClient[AXIOS_LOGGER_INSTALLED] = true;
+
+  flaggedClient.interceptors.request.use((config) => {
     requestMeta.set(config, { startedAt: process.hrtime.bigint() });
     return config;
   });
 
-  client.interceptors.response.use(
+  flaggedClient.interceptors.response.use(
     (response) => {
       void logResponse(response).catch((error) => {
         console.error("Failed to write axios request log", error);

@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -13,9 +14,30 @@ const main = async () => {
     create: { code: "leader", name: "小组长" },
     update: {}
   });
-  await prisma.role.upsert({
+  const adminRole = await prisma.role.upsert({
     where: { code: "admin" },
     create: { code: "admin", name: "管理员" },
+    update: {}
+  });
+
+  const admin = await prisma.user.upsert({
+    where: { username: "admin" },
+    create: {
+      username: "admin",
+      passwordHash: await bcrypt.hash("admin1", 10),
+      name: "管理员",
+      status: "active"
+    },
+    update: {
+      name: "管理员",
+      status: "active",
+      passwordHash: await bcrypt.hash("admin1", 10)
+    }
+  });
+
+  await prisma.userRole.upsert({
+    where: { userId_roleId: { userId: admin.id, roleId: adminRole.id } },
+    create: { userId: admin.id, roleId: adminRole.id },
     update: {}
   });
 

@@ -8,3 +8,5 @@ coverage
 *.rar
 .DS_Store
 ._*
+*.gz
+*.tar.gz

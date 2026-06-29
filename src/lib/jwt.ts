@@ -7,6 +7,7 @@ const DEFAULT_CLIENT_IDS = ["legacy-frontend", "new-frontend"] as const;
 export interface LocalJwtPayload {
   sub?: string;
   userId: string;
+  wecomUserId?: string | null;
   corpId?: string;
   clientId?: string;
   scopes?: string[];

@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import type { User } from "@prisma/client";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { config } from "../lib/config.js";
 import { AppError } from "../lib/errors.js";
@@ -7,6 +8,7 @@ import { prisma } from "../lib/prisma.js";
 
 interface AuthServiceUser {
   userId: string;
+  wecomUserId?: string | null;
   name: string;
   avatar?: string;
   token?: string;
@@ -14,6 +16,7 @@ interface AuthServiceUser {
 
 export interface AuthenticatedUser {
   id: string;
+  wecomUserId?: string | null;
   name: string;
   avatar?: string;
   roles: string[];
@@ -133,7 +136,13 @@ const fetchUserFromAuthService = async (token: string): Promise<AuthServiceUser>
     throw new AppError(401, "token 缺失或失效");
   }
 
-  return { userId: data.userId, name: data.name, avatar: data.avatar, token: data.token };
+  return {
+    userId: data.userId,
+    wecomUserId: typeof data.wecomUserId === "string" ? data.wecomUserId : null,
+    name: data.name,
+    avatar: data.avatar,
+    token: data.token
+  };
 };
 
 const upsertAuthenticatedUser = async (authUser: AuthServiceUser): Promise<AuthenticatedUser> => {
@@ -142,11 +151,13 @@ const upsertAuthenticatedUser = async (authUser: AuthServiceUser): Promise<Authe
       where: { id: authUser.userId },
       create: {
         id: authUser.userId,
+        wecomUserId: authUser.wecomUserId ?? null,
         name: authUser.name,
         avatar: authUser.avatar,
         status: "active"
       },
       update: {
+        wecomUserId: authUser.wecomUserId ?? undefined,
         name: authUser.name,
         avatar: authUser.avatar
       }
@@ -178,10 +189,70 @@ const upsertAuthenticatedUser = async (authUser: AuthServiceUser): Promise<Authe
 
   return {
     id: user.id,
+    wecomUserId: user.wecomUserId,
     name: user.name,
     avatar: user.avatar ?? undefined,
     roles: user.userRoles.map((item) => item.role.code)
   };
+};
+
+const serializeDbUser = (user: User & {
+  userRoles: Array<{ role: { code: string } }>;
+}): AuthenticatedUser => ({
+  id: user.id,
+  wecomUserId: user.wecomUserId,
+  name: user.name,
+  avatar: user.avatar ?? undefined,
+  roles: user.userRoles.map((item) => item.role.code)
+});
+
+const resolveLocalUser = async (localUser: NonNullable<ReturnType<typeof verifyLocalToken>>) => {
+  const existingUser = await prisma.user.findUnique({
+    where: { id: localUser.userId },
+    include: { userRoles: { include: { role: true } } }
+  });
+
+  if (existingUser) {
+    if (existingUser.status !== "active") throw new AppError(401, "token 缺失或失效");
+    const nextName = localUser.name || existingUser.name;
+    const nextWecomUserId =
+      typeof localUser.wecomUserId === "string" && localUser.wecomUserId.trim()
+        ? localUser.wecomUserId
+        : existingUser.wecomUserId;
+    const nextAvatar =
+      typeof localUser.avatar === "string" && localUser.avatar.trim()
+        ? localUser.avatar
+        : existingUser.avatar;
+
+    if (
+      nextName !== existingUser.name ||
+      nextWecomUserId !== existingUser.wecomUserId ||
+      nextAvatar !== existingUser.avatar
+    ) {
+      await prisma.user.update({
+        where: { id: localUser.userId },
+        data: {
+          wecomUserId: nextWecomUserId,
+          name: nextName,
+          avatar: nextAvatar
+        }
+      });
+    }
+
+    return serializeDbUser({
+      ...existingUser,
+      wecomUserId: nextWecomUserId,
+      name: nextName,
+      avatar: nextAvatar
+    });
+  }
+
+  return upsertAuthenticatedUser({
+    userId: localUser.userId,
+    wecomUserId: localUser.wecomUserId ?? undefined,
+    name: localUser.name || localUser.userId,
+    avatar: localUser.avatar ?? undefined
+  });
 };
 
 export const resolveUser = async (token: string) => {
@@ -208,13 +279,18 @@ export const resolveUser = async (token: string) => {
   }
 
   const localUser = verifyLocalToken(token);
-  const authUser = localUser
-    ? {
-        userId: localUser.userId,
-        name: localUser.name || localUser.userId,
-        avatar: localUser.avatar ?? undefined
-      }
-    : await fetchUserFromAuthService(token);
+  if (localUser) {
+    const user = await resolveLocalUser(localUser);
+    pruneExpiredEntries(authCache);
+    authCache.set(cacheKey, {
+      user,
+      expiresAt: Date.now() + config.authCacheTtlSeconds * 1000
+    });
+    trimOldestEntries(authCache, MAX_AUTH_CACHE_ENTRIES);
+    return user;
+  }
+
+  const authUser = await fetchUserFromAuthService(token);
   const user = await upsertAuthenticatedUser(authUser);
   pruneExpiredEntries(authCache);
   authCache.set(cacheKey, {
@@ -222,6 +298,13 @@ export const resolveUser = async (token: string) => {
     expiresAt: Date.now() + config.authCacheTtlSeconds * 1000
   });
   trimOldestEntries(authCache, MAX_AUTH_CACHE_ENTRIES);
+  return user;
+};
+
+export const requireAdminUser = async (token: string | undefined) => {
+  if (!token) throw new AppError(401, "token 缺失或失效");
+  const user = await resolveUser(token);
+  if (!user.roles.includes("admin")) throw new AppError(403, "当前用户无权限");
   return user;
 };
 

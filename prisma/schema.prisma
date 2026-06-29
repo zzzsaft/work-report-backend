@@ -75,11 +75,14 @@ model User {
   id                String               @id @default(cuid())
   wecomUserId       String?              @map("wecom_user_id")
   employeeNo        String?              @map("employee_no")
+  username          String?              @unique
+  passwordHash      String?              @map("password_hash")
   name              String
   nameInitials      String?              @map("name_initials")
   avatar            String?
   teamName          String?              @map("team_name")
   status            String               @default("active")
+  lastLoginAt       DateTime?            @map("last_login_at")
   createdAt         DateTime             @default(now()) @map("created_at")
   updatedAt         DateTime             @updatedAt @map("updated_at")
   assignments       OperationAssignment[] @relation("WorkerAssignments")

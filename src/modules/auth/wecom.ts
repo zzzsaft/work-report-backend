@@ -289,6 +289,7 @@ export const exchangeWecomCode = async (clientId: string, code: string) => {
   const avatar = profile?.avatar ?? profile?.thumb_avatar ?? null;
   const token = generateLocalToken({
     userId,
+    wecomUserId: userId,
     corpId: client.corpId,
     clientId: client.clientId,
     scopes: client.scopes,
@@ -300,6 +301,7 @@ export const exchangeWecomCode = async (clientId: string, code: string) => {
     token,
     user: {
       userId,
+      wecomUserId: userId,
       corpId: client.corpId,
       clientId: client.clientId,
       name,
