@@ -8,7 +8,6 @@ coverage
 *.rar
 .DS_Store
 ._*
-*.gz
+**/*.gz
 *.tar.gz
-*.gz
-.dist/work-report-backend.tar.gz
+.dist/*.gz
