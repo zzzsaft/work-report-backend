@@ -102,12 +102,160 @@ const serializeWorkerPermission = (worker: {
   };
 };
 
+const serializeReportRecord = (assignment: {
+  id: string;
+  workOrder: { orderNo: string; productName: string };
+  part: { partCode: string; partName: string };
+  operationPool: { operationCode: string; operationName: string };
+  workerName: string;
+  status: string;
+  claimedAt: Date | null;
+  estimatedHours: number | null;
+  session: {
+    id: string;
+    startedAt: Date | null;
+    completedAt: Date | null;
+    accumulatedSeconds: number;
+  } | null;
+}) => {
+  const durationSeconds = assignment.session?.accumulatedSeconds ?? 0;
+  const durationHours = Math.round((durationSeconds / 3600) * 10) / 10;
+
+  return {
+    id: assignment.id,
+    orderNo: assignment.workOrder.orderNo,
+    productName: assignment.workOrder.productName,
+    partCode: assignment.part.partCode,
+    partName: assignment.part.partName,
+    operationCode: assignment.operationPool.operationCode,
+    operationName: assignment.operationPool.operationName,
+    operatorName: assignment.workerName,
+    status: assignment.status,
+    claimedAt: assignment.claimedAt?.toISOString(),
+    estimatedHours: assignment.estimatedHours ?? 0,
+    durationHours,
+    startedAt: assignment.session?.startedAt?.toISOString(),
+    completedAt: assignment.session?.completedAt?.toISOString(),
+    photos: []
+  };
+};
+
 export class WorkReportService {
   private readonly importService: WorkReportImportService;
 
   constructor(private readonly db: PrismaClient = prisma) {
     this.importService = new WorkReportImportService(db);
   }
+
+  getReports = async (filters: {
+    keyword?: string;
+    orderNo?: string;
+    operatorName?: string;
+    status?: string;
+    operationCode?: string;
+    operationName?: string;
+    startTime?: string;
+    endTime?: string;
+  } = {}) => {
+    const where: Record<string, unknown> = {};
+
+    if (filters.keyword) {
+      where.OR = [
+        { workOrder: { orderNo: { contains: filters.keyword, mode: "insensitive" as const } } },
+        { workOrder: { productName: { contains: filters.keyword, mode: "insensitive" as const } } },
+        { part: { partCode: { contains: filters.keyword, mode: "insensitive" as const } } },
+        { part: { partName: { contains: filters.keyword, mode: "insensitive" as const } } },
+        { operationPool: { operationCode: { contains: filters.keyword, mode: "insensitive" as const } } },
+        { operationPool: { operationName: { contains: filters.keyword, mode: "insensitive" as const } } },
+        { workerName: { contains: filters.keyword, mode: "insensitive" as const } }
+      ];
+    }
+
+    if (filters.orderNo) {
+      where.workOrder = {
+        ...(where.workOrder as Record<string, unknown>),
+        orderNo: { contains: filters.orderNo, mode: "insensitive" as const }
+      };
+    }
+
+    if (filters.operatorName) {
+      where.workerName = { contains: filters.operatorName, mode: "insensitive" as const };
+    }
+
+    if (filters.status) {
+      where.status = filters.status;
+    }
+
+    if (filters.operationCode) {
+      where.operationPool = {
+        ...(where.operationPool as Record<string, unknown>),
+        operationCode: { contains: filters.operationCode, mode: "insensitive" as const }
+      };
+    }
+
+    if (filters.operationName) {
+      where.operationPool = {
+        ...(where.operationPool as Record<string, unknown>),
+        operationName: { contains: filters.operationName, mode: "insensitive" as const }
+      };
+    }
+
+    if (filters.startTime || filters.endTime) {
+      where.claimedAt = {};
+      if (filters.startTime) {
+        (where.claimedAt as Record<string, unknown>).gte = new Date(filters.startTime);
+      }
+      if (filters.endTime) {
+        const endDate = new Date(filters.endTime);
+        endDate.setDate(endDate.getDate() + 1);
+        (where.claimedAt as Record<string, unknown>).lt = endDate;
+      }
+    }
+
+    const assignments = await this.db.operationAssignment.findMany({
+      where,
+      include: {
+        workOrder: { select: { orderNo: true, productName: true } },
+        part: { select: { partCode: true, partName: true } },
+        operationPool: { select: { operationCode: true, operationName: true } },
+        session: {
+          select: { id: true, startedAt: true, completedAt: true, accumulatedSeconds: true }
+        }
+      },
+      orderBy: [{ claimedAt: "desc" }, { id: "desc" }]
+    });
+
+    return assignments.map(serializeReportRecord);
+  };
+
+  updateAssignmentHours = async (assignmentId: string, estimatedHours: number) => {
+    const assignment = await this.db.operationAssignment.findUnique({
+      where: { id: assignmentId }
+    });
+
+    if (!assignment) {
+      throw new AppError(404, "报工记录不存在");
+    }
+
+    await this.db.operationAssignment.update({
+      where: { id: assignmentId },
+      data: { estimatedHours }
+    });
+
+    const updated = await this.db.operationAssignment.findUnique({
+      where: { id: assignmentId },
+      include: {
+        workOrder: { select: { orderNo: true, productName: true } },
+        part: { select: { partCode: true, partName: true } },
+        operationPool: { select: { operationCode: true, operationName: true } },
+        session: {
+          select: { id: true, startedAt: true, completedAt: true, accumulatedSeconds: true }
+        }
+      }
+    });
+
+    return serializeReportRecord(updated!);
+  };
 
   getAssignments = async (user: AuthenticatedUser) => {
     const assignments = await this.db.operationAssignment.findMany({

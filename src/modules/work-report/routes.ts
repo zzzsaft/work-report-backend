@@ -252,8 +252,29 @@ workReportRouter.patch(
 workReportRouter.get(
   "/admin/reports",
   requireCapability("canViewAdmin"),
-  asyncHandler(async () => {
-    notImplemented();
+  asyncHandler(async (req, res) => {
+    const query = z
+      .object({
+        keyword: z.string().optional(),
+        orderNo: z.string().optional(),
+        operatorName: z.string().optional(),
+        status: z.string().optional(),
+        operationCode: z.string().optional(),
+        operationName: z.string().optional(),
+        startTime: z.string().optional(),
+        endTime: z.string().optional()
+      })
+      .parse(req.query);
+    res.json(await workReportService.getReports(query));
+  })
+);
+
+workReportRouter.patch(
+  "/admin/reports/:id/hours",
+  requireCapability("canViewAdmin"),
+  asyncHandler(async (req, res) => {
+    const body = z.object({ estimatedHours: z.coerce.number().positive() }).parse(req.body);
+    res.json(await workReportService.updateAssignmentHours(req.params.id, body.estimatedHours));
   })
 );
 
