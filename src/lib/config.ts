@@ -27,6 +27,24 @@ const corsOriginFromEnv = (name: string) => {
   return origins;
 };
 
+const authClientIdsFromEnv = () => {
+  const value = process.env.AUTH_CLIENT_IDS;
+  const values = (value || "")
+    .split(",")
+    .map((clientId) => clientId.trim())
+    .filter(Boolean);
+  const isOldFrontendConfig =
+    values.length > 0 && values.every((clientId) => ["legacy-frontend", "new-frontend"].includes(clientId));
+  const normalizedValue = values.length === 0 || isOldFrontendConfig
+    ? process.env.WECOM_CLIENT_ID || "work-report"
+    : values.join(",");
+
+  return normalizedValue
+    .split(",")
+    .map((clientId) => clientId.trim())
+    .filter(Boolean);
+};
+
 export const config = {
   port: numberFromEnv("PORT", 8080),
   authApiBaseUrl: process.env.AUTH_API_BASE_URL || "http://hz.jc-times.com:2000/",
@@ -37,10 +55,7 @@ export const config = {
   authCacheTtlSeconds: numberFromEnv("AUTH_CACHE_TTL_SECONDS", 300),
   jwtSecret: process.env.JWT_SECRET || "",
   authTokenTtl: process.env.AUTH_TOKEN_TTL || "30m",
-  authClientIds: (process.env.AUTH_CLIENT_IDS || "legacy-frontend,new-frontend")
-    .split(",")
-    .map((clientId) => clientId.trim())
-    .filter(Boolean),
+  authClientIds: authClientIdsFromEnv(),
   wecomApiBaseUrl: process.env.WECOM_API_BASE_URL || "https://qyapi.weixin.qq.com",
   wechatProxyHost:
     process.env.WECHAT_PROXY_HOST ||
@@ -65,7 +80,7 @@ export const config = {
   xftSsoPrivateKey: process.env.XFT_SSO_PRIVATE_KEY || process.env.RSA_PRIVATE_KEY || "",
   xftSsoConnectorId: process.env.XFT_SSO_CONNECTOR_ID || "223147993689554944",
   xftSsoFlowId: process.env.XFT_SSO_FLOW_ID || "224943279282388992",
-  xftSsoWecomClientId: process.env.XFT_SSO_WECOM_CLIENT_ID || "legacy-frontend",
+  xftSsoWecomClientId: process.env.XFT_SSO_WECOM_CLIENT_ID || "work-report",
   xftSsoLoginBaseUrl:
     process.env.XFT_SSO_LOGIN_BASE_URL || "https://xft.cmbchina.com/xft-gateway/xft-login-new/xwapi/login"
 };

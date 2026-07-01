@@ -5,7 +5,7 @@ import { generateLocalToken } from "../../lib/jwt.js";
 import { prisma } from "../../lib/prisma.js";
 import { clearAuthCache } from "../../middleware/auth.js";
 
-export const ACCOUNT_CLIENT_ID = "new-frontend";
+export const ACCOUNT_CLIENT_ID = "work-report";
 const PASSWORD_LOGIN_ERROR = "账号或密码错误";
 const PASSWORD_MIN_LENGTH = 6;
 const ROLE_CODES = ["worker", "leader", "admin"] as const;
@@ -87,7 +87,7 @@ export class AuthAccountService {
   constructor(private readonly db: PrismaClient = prisma) {}
 
   async login(input: { clientId: unknown; username: unknown; password: unknown }) {
-    const clientId = String(input.clientId ?? "").trim();
+    const clientId = String(input.clientId ?? ACCOUNT_CLIENT_ID).trim();
     if (clientId !== ACCOUNT_CLIENT_ID) throw new AppError(401, PASSWORD_LOGIN_ERROR);
 
     const username = normalizeUsername(input.username);

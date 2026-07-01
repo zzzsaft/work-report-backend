@@ -23,10 +23,15 @@ AUTH_COOKIE_SECURE=false
 AUTH_CACHE_TTL_SECONDS=300
 JWT_SECRET=
 AUTH_TOKEN_TTL=30m
-AUTH_CLIENT_IDS=legacy-frontend,new-frontend
+AUTH_CLIENT_IDS=work-report
 WECHAT_AUTH_ALLOWED_ORIGINS="http://localhost:5173,https://app.xinfatech.xyz:2011"
 WECHAT_PROXY_HOST="http://122.226.146.110:780"
 WECHAT_PROXY_CRYPTO_SECRET=
+WECOM_CLIENT_ID=work-report
+WECOM_CORP_ID=
+WECOM_AGENT_ID=
+WECOM_CORP_SECRET=
+WECOM_CONTACT_CORP_SECRET=
 ALLOW_MOCK_TOKEN=false
 MOCK_AUTH_TOKEN=mock-token
 MOCK_USER_ID=demo-worker
@@ -49,7 +54,7 @@ XFT_ENTERPRISE_ID=
 
 `CORS_ORIGIN` 支持多个地址，用英文逗号分隔。地址需要和浏览器请求里的 Origin 完全一致，包括协议、域名和端口。
 
-`JWT_SECRET` 用于本后端签发和校验登录 token。要让前端的 `VITE_AUTH_API_BASE_URL` 指向本服务，并兼容参考 `jdy_backend` 旧 token，两个后端需要配置相同的 `JWT_SECRET`。`AUTH_CLIENT_IDS` 兼容参考项目默认的 `legacy-frontend,new-frontend`。
+`JWT_SECRET` 用于本后端签发和校验登录 token。要让前端的 `VITE_AUTH_API_BASE_URL` 指向本服务，前后端调用的后端实例需要配置相同的 `JWT_SECRET`。`AUTH_CLIENT_IDS` 默认是单客户端 `work-report`。
 
 企业微信登录还需要配置认证客户端。推荐在服务根目录放 `wechat.json`，格式见 [wechat.example.json](../wechat.example.json)：
 
@@ -61,9 +66,10 @@ XFT_ENTERPRISE_ID=
     "apps": [
       {
         "agentId": 1000044,
-        "corpSecret": "replace-with-secret",
-        "name": "CRM",
-        "clientId": "legacy-frontend",
+        "corpSecret": "replace-with-login-secret",
+        "contactCorpSecret": "replace-with-address-book-secret",
+        "name": "work-report",
+        "clientId": "work-report",
         "allowedOrigins": ["https://app.example.com"],
         "scopes": []
       }
@@ -72,11 +78,13 @@ XFT_ENTERPRISE_ID=
 ]
 ```
 
-也可以用 `WECHAT_AUTH_CLIENTS` 放同样的 JSON。简单部署时可用 `WECOM_LEGACY_CORP_ID`、`WECOM_LEGACY_AGENT_ID`、`WECOM_LEGACY_CORP_SECRET` 配 `legacy-frontend`，用 `WECOM_NEW_CORP_ID`、`WECOM_NEW_AGENT_ID`、`WECOM_NEW_CORP_SECRET` 配 `new-frontend`。
+也可以用 `WECHAT_AUTH_CLIENTS` 放同样的 JSON。`corpSecret` 用于企业微信登录、OAuth code 换 token；`contactCorpSecret` 用于创建、更新、删除、邀请成员和获取加入二维码等通讯录接口，必须配置为“通讯录同步”或具备通讯录权限的 Secret。简单部署时可直接配置 `WECOM_CLIENT_ID=work-report`、`WECOM_CORP_ID`、`WECOM_AGENT_ID`、`WECOM_CORP_SECRET`、`WECOM_CONTACT_CORP_SECRET`。
+
+兼容说明：旧前端如果仍传 `clientId=legacy-frontend` 或 `clientId=new-frontend`，后端会映射到 `work-report`；旧的 `WECOM_LEGACY_*`、`WECOM_NEW_*` 环境变量也会作为兜底读取，但新部署不建议继续使用。
 
 `WECHAT_AUTH_ALLOWED_ORIGINS` 是登录接口允许的浏览器 Origin，多个地址用英文逗号分隔；也可以在 `wechat.json` 每个 app 的 `allowedOrigins` 单独配置。`AUTH_COOKIE_SECURE=true` 时 Cookie 只会在 HTTPS 下写入，开发环境通常设为 `false`。
 
-如果当前服务器出口 IP 没有加入企业微信可信 IP，需要像参考 `jdy_backend/src/api/jctimes` 一样走 jctimes 微信代理。配置 `WECHAT_PROXY_HOST` 和 `WECHAT_PROXY_CRYPTO_SECRET` 后，本服务会把 `/cgi-bin/gettoken`、`/cgi-bin/auth/getuserinfo`、`/cgi-bin/auth/getuserdetail`、`/cgi-bin/user/get` 通过 `POST <WECHAT_PROXY_HOST>/wechat/proxy` 转发，协议为 AES-256-GCM 加密 JSON，和参考项目一致。未配置 `WECHAT_PROXY_CRYPTO_SECRET` 时才会直连 `WECOM_API_BASE_URL`。
+如果当前服务器出口 IP 没有加入企业微信可信 IP，需要像参考 `jdy_backend/src/api/jctimes` 一样走 jctimes 微信代理。配置 `WECHAT_PROXY_HOST` 和 `WECHAT_PROXY_CRYPTO_SECRET` 后，本服务会把 `/cgi-bin/gettoken`、`/cgi-bin/auth/getuserinfo`、`/cgi-bin/auth/getuserdetail`、`/cgi-bin/user/get`、`/cgi-bin/user/create`、`/cgi-bin/user/update`、`/cgi-bin/user/batchdelete`、`/cgi-bin/department/create`、`/cgi-bin/department/update`、`/cgi-bin/department/delete`、`/cgi-bin/department/simplelist`、`/cgi-bin/user/list_id`、`/cgi-bin/batch/invite`、`/cgi-bin/corp/get_join_qrcode` 通过 `POST <WECHAT_PROXY_HOST>/wechat/proxy` 转发，协议为 AES-256-GCM 加密 JSON，和参考项目一致。未配置 `WECHAT_PROXY_CRYPTO_SECRET` 时才会直连 `WECOM_API_BASE_URL`。
 
 ## 身份验证接口
 
@@ -90,7 +98,6 @@ POST /auth/wecom/token
 
 ```json
 {
-  "clientId": "new-frontend",
   "code": "企业微信 OAuth code"
 }
 ```
@@ -103,7 +110,7 @@ POST /auth/wecom/token
   "user": {
     "userId": "LiangZhi",
     "corpId": "wwxxxxxxxxxxxxxxxx",
-    "clientId": "new-frontend",
+    "clientId": "work-report",
     "name": "梁之",
     "avatar": "https://..."
   }
@@ -118,7 +125,7 @@ POST /auth/wecom/token
 POST /auth/token
 ```
 
-请求体只需要 `{ "code": "企业微信 OAuth code" }`，默认使用 `legacy-frontend` 客户端。
+请求体只需要 `{ "code": "企业微信 OAuth code" }`，默认使用 `work-report` 客户端。
 
 ### 当前登录用户
 
@@ -126,7 +133,7 @@ POST /auth/token
 GET /auth/me
 ```
 
-支持 `Authorization: Bearer <token>` 或 `auth_token` Cookie。服务端会优先按本地 JWT 校验，兼容 `jdy_backend` 的 `issuer=jdy-backend`、`audience=legacy-frontend|new-frontend` token；若不是本地 JWT，则回落到 `AUTH_API_BASE_URL/auth/me`。
+支持 `Authorization: Bearer <token>` 或 `auth_token` Cookie。服务端会优先按本地 JWT 校验；若不是本地 JWT，则回落到 `AUTH_API_BASE_URL/auth/me`。
 
 响应示例：
 
@@ -156,6 +163,340 @@ POST /auth/logout
 ```
 
 清除 `auth_token` Cookie，成功返回 `204 No Content`。
+
+## 企业微信通讯录管理
+
+以下接口需要管理员登录态，支持 `Authorization: Bearer <token>` 或 `auth_token` Cookie。企业微信侧会使用当前 `clientId` 配置里的 `contactCorpSecret`，或简单 env 模式下的 `WECOM_CONTACT_CORP_SECRET`，获取通讯录专用 access_token；未配置时接口返回 `WECOM_CONTACT_CORP_SECRET_MISSING`。
+
+### 创建企业微信成员
+
+```http
+POST /auth/admin/wecom/users
+```
+
+请求体支持两种格式。推荐把企业微信原始字段放在 `user` 内：
+
+```json
+{
+  "user": {
+    "userid": "zhangsan",
+    "name": "张三",
+    "alias": "jackzhang",
+    "mobile": "13800000000",
+    "department": [1, 2],
+    "order": [10, 40],
+    "position": "产品经理",
+    "gender": "1",
+    "email": "zhangsan@example.com",
+    "biz_mail": "zhangsan@corp.example.com",
+    "telephone": "020-123456",
+    "is_leader_in_dept": [1, 0],
+    "direct_leader": ["lisi"],
+    "enable": 1
+  }
+}
+```
+
+也兼容把 `userid`、`name` 等企业微信字段直接放在请求体顶层。服务端会透传给企业微信 `POST /cgi-bin/user/create`，仅校验 `userid` 和 `name` 非空。
+
+成功响应：
+
+```json
+{
+  "errcode": 0,
+  "errmsg": "created",
+  "createdDepartmentList": {
+    "department_info": [
+      {
+        "name": "生产部",
+        "id": 123
+      }
+    ]
+  }
+}
+```
+
+### 更新企业微信成员
+
+```http
+PATCH /auth/admin/wecom/users/:userid
+```
+
+请求体推荐把企业微信原始字段放在 `user` 内。路径里的 `:userid` 会作为默认 `userid`，也可以在 `user.userid` 中显式传入。
+
+```json
+{
+  "user": {
+    "name": "李四",
+    "department": [1],
+    "order": [10],
+    "position": "后台工程师",
+    "mobile": "13800000000",
+    "gender": "1",
+    "email": "zhangsan@qq.com",
+    "biz_mail": "zhangsan@tencent.com",
+    "biz_mail_alias": {
+      "item": ["jack@tencent.com", "hr@tencent.com"]
+    },
+    "is_leader_in_dept": [1],
+    "direct_leader": ["lisi"],
+    "enable": 1,
+    "telephone": "020-123456",
+    "alias": "jackzhang",
+    "address": "广州市海珠区新港中路",
+    "main_department": 1
+  }
+}
+```
+
+服务端会透传给企业微信 `POST /cgi-bin/user/update`，仅校验最终 `userid` 非空。
+
+成功响应：
+
+```json
+{
+  "errcode": 0,
+  "errmsg": "updated"
+}
+```
+
+### 批量删除企业微信成员
+
+```http
+POST /auth/admin/wecom/users/batch-delete
+```
+
+请求体：
+
+```json
+{
+  "useridlist": ["zhangsan", "lisi"]
+}
+```
+
+`useridlist` 最多 200 个。成功响应：
+
+```json
+{
+  "errcode": 0,
+  "errmsg": "deleted"
+}
+```
+
+### 创建企业微信部门
+
+```http
+POST /auth/admin/wecom/departments
+```
+
+请求体支持 `{ "department": { ... } }` 或直接把企业微信字段放在顶层：
+
+```json
+{
+  "department": {
+    "name": "广州研发中心",
+    "name_en": "RDGZ",
+    "parentid": 1,
+    "order": 1,
+    "id": 2
+  }
+}
+```
+
+服务端会调用企业微信 `POST /cgi-bin/department/create`，成功后同步写入本地 `wecom_departments` 表。成功响应：
+
+```json
+{
+  "errcode": 0,
+  "errmsg": "created",
+  "id": 2
+}
+```
+
+### 更新企业微信部门
+
+```http
+PATCH /auth/admin/wecom/departments/:id
+```
+
+请求体推荐把企业微信字段放在 `department` 内。路径里的 `:id` 会作为默认部门 id：
+
+```json
+{
+  "department": {
+    "name": "广州研发中心",
+    "name_en": "RDGZ",
+    "parentid": 1,
+    "order": 1
+  }
+}
+```
+
+成功后同步更新本地 `wecom_departments` 表。成功响应：
+
+```json
+{
+  "errcode": 0,
+  "errmsg": "updated"
+}
+```
+
+### 删除企业微信部门
+
+```http
+DELETE /auth/admin/wecom/departments/:id
+```
+
+查询参数：
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `clientId` | 否 | 企业微信配置客户端，默认 `work-report` |
+
+成功后同步删除本地部门及其用户-部门关系。成功响应：
+
+```json
+{
+  "errcode": 0,
+  "errmsg": "deleted"
+}
+```
+
+### 获取并同步部门 ID 列表
+
+```http
+GET /auth/admin/wecom/departments/simplelist?id=1
+```
+
+不传 `id` 时获取全量组织架构；返回结果会同步 upsert 到本地 `wecom_departments` 表。
+
+```json
+{
+  "errcode": 0,
+  "errmsg": "ok",
+  "departmentId": [
+    {
+      "id": 2,
+      "parentid": 1,
+      "order": 10
+    }
+  ],
+  "department_id": [
+    {
+      "id": 2,
+      "parentid": 1,
+      "order": 10
+    }
+  ]
+}
+```
+
+### 获取并同步成员部门关系
+
+```http
+POST /auth/admin/wecom/user-departments/list-id
+```
+
+调用企业微信 `POST /cgi-bin/user/list_id` 获取单页用户-部门关系，并增量同步到本地 `wecom_user_departments` 表，同时更新已存在本地用户的 `department` 和 `main_department`。
+
+```json
+{
+  "cursor": "",
+  "limit": 10000
+}
+```
+
+成功响应：
+
+```json
+{
+  "errcode": 0,
+  "errmsg": "ok",
+  "nextCursor": "",
+  "next_cursor": "",
+  "deptUser": [
+    {
+      "userid": "zhangsan",
+      "department": 2
+    }
+  ],
+  "dept_user": [
+    {
+      "userid": "zhangsan",
+      "department": 2
+    }
+  ]
+}
+```
+
+需要全量同步时使用：
+
+```http
+POST /auth/admin/wecom/user-departments/sync
+```
+
+该接口会自动翻页到 `next_cursor` 为空，并以企业微信返回结果替换本地 `wecom_user_departments` 当前客户端的数据。
+
+### 邀请企业微信成员
+
+```http
+POST /auth/admin/wecom/invite
+```
+
+请求体中 `user`、`party`、`tag` 不能同时为空：
+
+```json
+{
+  "user": ["UserID1", "UserID2"],
+  "party": [1, 2],
+  "tag": [101, 102]
+}
+```
+
+限制：`user` 最多 1000 个，`party` 最多 100 个，`tag` 最多 100 个。成功响应：
+
+```json
+{
+  "errcode": 0,
+  "errmsg": "ok",
+  "invalidUser": ["UserID1"],
+  "invalidParty": [1],
+  "invalidTag": [101],
+  "invaliduser": ["UserID1"],
+  "invalidparty": [1],
+  "invalidtag": [101]
+}
+```
+
+驼峰字段和企业微信原始字段含义相同，前端优先使用 `invalidUser`、`invalidParty`、`invalidTag`。
+
+### 获取加入企业二维码
+
+```http
+GET /auth/admin/wecom/join-qrcode?sizeType=3
+```
+
+查询参数：
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `clientId` | 否 | 企业微信配置客户端，默认 `work-report`；单客户端项目通常不需要传 |
+| `sizeType` | 否 | 二维码尺寸类型：`1` 为 171 x 171，`2` 为 399 x 399，`3` 为 741 x 741，`4` 为 2052 x 2052；默认 `3` |
+
+成功响应：
+
+```json
+{
+  "errcode": 0,
+  "errmsg": "ok",
+  "joinQrcode": "https://work.weixin.qq.com/wework_admin/genqrcode?action=join&...",
+  "join_qrcode": "https://work.weixin.qq.com/wework_admin/genqrcode?action=join&...",
+  "expiresInDays": 7,
+  "sizeType": 3
+}
+```
+
+`joinQrcode` 和 `join_qrcode` 是同一个链接，前端优先使用 `joinQrcode`。企业微信返回的二维码链接有效期为 7 天，前端展示时不要长期缓存。
 
 ## 角色和能力
 

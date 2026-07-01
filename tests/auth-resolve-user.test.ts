@@ -61,7 +61,7 @@ describe("resolveUser local token checks", () => {
 
     const token = generateLocalToken({
       userId: "account-1",
-      clientId: "new-frontend",
+      clientId: "work-report",
       name: "管理员"
     });
 
@@ -77,7 +77,7 @@ describe("resolveUser local token checks", () => {
 
     const token = generateLocalToken({
       userId: "account-1",
-      clientId: "new-frontend",
+      clientId: "work-report",
       name: "管理员"
     });
 
@@ -106,7 +106,7 @@ describe("resolveUser local token checks", () => {
 
     const token = generateLocalToken({
       userId: "account-1",
-      clientId: "new-frontend",
+      clientId: "work-report",
       name: "管理员",
       avatar: "https://wecom.example/avatar/zz.png"
     });
@@ -146,7 +146,7 @@ describe("resolveUser local token checks", () => {
       userId: "account-1",
       wecomUserId: "zz",
       corpId: "ww-test",
-      clientId: "new-frontend",
+      clientId: "work-report",
       name: "管理员"
     });
 
@@ -181,7 +181,7 @@ describe("resolveUser local token checks", () => {
     const token = generateLocalToken({
       userId: "account-1",
       wecomUserId: "zz",
-      clientId: "new-frontend",
+      clientId: "work-report",
       name: "管理员",
       gender: "1",
       qrCode: "https://open.work.weixin.qq.com/wwopen/userQRCode?vcode=zz",

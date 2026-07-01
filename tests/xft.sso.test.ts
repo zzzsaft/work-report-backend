@@ -80,7 +80,7 @@ describe("xft sso", () => {
     const token = generateLocalToken({
       userId: "frontend-user",
       wecomUserId: "wecom-user",
-      clientId: "new-frontend",
+      clientId: "work-report",
       name: "前端用户"
     });
     const redirect = vi.fn();
@@ -120,13 +120,13 @@ describe("xft sso", () => {
     const queryToken = generateLocalToken({
       userId: "query-user",
       wecomUserId: "query-wecom",
-      clientId: "new-frontend",
+      clientId: "work-report",
       name: "查询用户"
     });
     const cookieToken = generateLocalToken({
       userId: "cookie-user",
       wecomUserId: "cookie-wecom",
-      clientId: "new-frontend",
+      clientId: "work-report",
       name: "Cookie 用户"
     });
     const redirect = vi.fn();

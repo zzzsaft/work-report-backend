@@ -4,7 +4,7 @@ import { config } from "../../lib/config.js";
 import { AppError } from "../../lib/errors.js";
 import { verifyLocalToken } from "../../lib/jwt.js";
 import { extractAuthToken, resolveUser } from "../../middleware/auth.js";
-import { exchangeWecomCode } from "../auth/wecom.js";
+import { exchangeWecomCode } from "../wecom/service.js";
 
 interface XftSsoLoginUrlOptions {
   userid: string;

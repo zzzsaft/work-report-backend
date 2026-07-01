@@ -5,23 +5,10 @@
     "apps": [
       {
         "agentId": 1000044,
-        "corpSecret": "replace-with-legacy-frontend-secret",
-        "name": "CRM",
-        "clientId": "legacy-frontend",
-        "allowedOrigins": ["http://localhost:5173"],
-        "scopes": []
-      }
-    ]
-  },
-  {
-    "corpId": "wwyyyyyyyyyyyyyyyy",
-    "name": "new-company",
-    "apps": [
-      {
-        "agentId": 1000002,
-        "corpSecret": "replace-with-new-frontend-secret",
-        "name": "frontend",
-        "clientId": "new-frontend",
+        "corpSecret": "replace-with-login-secret",
+        "contactCorpSecret": "replace-with-address-book-secret",
+        "name": "work-report",
+        "clientId": "work-report",
         "allowedOrigins": ["http://localhost:5173"],
         "scopes": []
       }

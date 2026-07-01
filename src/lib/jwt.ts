@@ -2,7 +2,7 @@ import jwt, { type JwtPayload as JsonWebTokenPayload } from "jsonwebtoken";
 import { config } from "./config.js";
 
 const JWT_ISSUER = "jdy-backend";
-const DEFAULT_CLIENT_IDS = ["legacy-frontend", "new-frontend"] as const;
+const DEFAULT_CLIENT_IDS = ["work-report"] as const;
 
 export interface LocalJwtPayload {
   sub?: string;
@@ -56,7 +56,7 @@ const normalizePayload = (payload: LocalJwtPayload): LocalAuthenticatedJwt => ({
   ...payload,
   sub: payload.sub ?? payload.userId,
   corpId: payload.corpId ?? "",
-  clientId: payload.clientId ?? "legacy-frontend",
+  clientId: payload.clientId ?? "work-report",
   scopes: payload.scopes ?? []
 });
 

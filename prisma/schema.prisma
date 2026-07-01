@@ -112,6 +112,39 @@ model User {
   @@schema("work_report")
 }
 
+model WecomDepartment {
+  id           String                @id @default(cuid())
+  clientId     String                @map("client_id")
+  departmentId Int                   @map("department_id")
+  name         String?
+  nameEn       String?               @map("name_en")
+  parentId     Int                   @map("parent_id")
+  order        BigInt?               @map("order_value")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+  users        WecomUserDepartment[]
+
+  @@unique([clientId, departmentId])
+  @@index([clientId, parentId])
+  @@map("wecom_departments")
+  @@schema("work_report")
+}
+
+model WecomUserDepartment {
+  clientId     String           @map("client_id")
+  userId       String           @map("user_id")
+  departmentId Int              @map("department_id")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  department   WecomDepartment? @relation(fields: [clientId, departmentId], references: [clientId, departmentId], onDelete: Cascade)
+
+  @@id([clientId, userId, departmentId])
+  @@index([clientId, departmentId])
+  @@index([userId])
+  @@map("wecom_user_departments")
+  @@schema("work_report")
+}
+
 model UserRole {
   userId String
   roleId String

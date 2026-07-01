@@ -100,7 +100,7 @@ describe("password account service", () => {
 
     await expect(
       serviceFor(account({ passwordHash })).login({
-        clientId: "legacy-frontend",
+        clientId: "old-client",
         username: "admin",
         password: "admin1"
       })
