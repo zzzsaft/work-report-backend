@@ -62,6 +62,7 @@ const getDateKey = (date: Date) =>
 
 const CLAIM_CONFLICT_MESSAGE = "该工序领取状态已变化，请重试";
 const MAX_CLAIM_PRODUCTS_PAGE_SIZE = 50;
+const MAX_REPORTS_PAGE_SIZE = 100;
 const PERMISSION_GROUPS = ["worker", "leader", "admin"] as const;
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
 
@@ -140,6 +141,26 @@ const serializeReportRecord = (assignment: {
   };
 };
 
+const dateOnlyPattern = /^\d{4}[-/]\d{2}[-/]\d{2}$/;
+
+const parseReportDate = (value: string) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) throw new AppError(400, "日期格式无效");
+  return parsed;
+};
+
+const reportDateRange = (startTime?: string, endTime?: string) => {
+  if (!startTime && !endTime) return undefined;
+
+  const range: Record<string, Date> = {};
+  if (startTime) range.gte = parseReportDate(startTime);
+  if (endTime) {
+    const endDate = parseReportDate(endTime);
+    range.lt = dateOnlyPattern.test(endTime) ? addDays(endDate, 1) : endDate;
+  }
+  return range;
+};
+
 export class WorkReportService {
   private readonly importService: WorkReportImportService;
 
@@ -156,8 +177,12 @@ export class WorkReportService {
     operationName?: string;
     startTime?: string;
     endTime?: string;
+    page?: number;
+    pageSize?: number;
   } = {}) => {
     const where: Record<string, unknown> = {};
+    const safePage = Math.max(filters.page ?? 1, 1);
+    const safePageSize = Math.min(Math.max(filters.pageSize ?? 50, 1), MAX_REPORTS_PAGE_SIZE);
 
     if (filters.keyword) {
       where.OR = [
@@ -200,32 +225,34 @@ export class WorkReportService {
       };
     }
 
-    if (filters.startTime || filters.endTime) {
-      where.claimedAt = {};
-      if (filters.startTime) {
-        (where.claimedAt as Record<string, unknown>).gte = new Date(filters.startTime);
-      }
-      if (filters.endTime) {
-        const endDate = new Date(filters.endTime);
-        endDate.setDate(endDate.getDate() + 1);
-        (where.claimedAt as Record<string, unknown>).lt = endDate;
-      }
-    }
+    const claimedAtRange = reportDateRange(filters.startTime, filters.endTime);
+    if (claimedAtRange) where.claimedAt = claimedAtRange;
 
-    const assignments = await this.db.operationAssignment.findMany({
-      where,
-      include: {
-        workOrder: { select: { orderNo: true, productName: true } },
-        part: { select: { partCode: true, partName: true } },
-        operationPool: { select: { operationCode: true, operationName: true } },
-        session: {
-          select: { id: true, startedAt: true, completedAt: true, accumulatedSeconds: true }
-        }
-      },
-      orderBy: [{ claimedAt: "desc" }, { id: "desc" }]
-    });
+    const [total, assignments] = await Promise.all([
+      this.db.operationAssignment.count({ where }),
+      this.db.operationAssignment.findMany({
+        where,
+        include: {
+          workOrder: { select: { orderNo: true, productName: true } },
+          part: { select: { partCode: true, partName: true } },
+          operationPool: { select: { operationCode: true, operationName: true } },
+          session: {
+            select: { id: true, startedAt: true, completedAt: true, accumulatedSeconds: true }
+          }
+        },
+        skip: (safePage - 1) * safePageSize,
+        take: safePageSize,
+        orderBy: [{ claimedAt: "desc" }, { id: "desc" }]
+      })
+    ]);
 
-    return assignments.map(serializeReportRecord);
+    return {
+      items: assignments.map(serializeReportRecord),
+      page: safePage,
+      pageSize: safePageSize,
+      total,
+      hasMore: safePage * safePageSize < total
+    };
   };
 
   updateAssignmentHours = async (assignmentId: string, estimatedHours: number) => {

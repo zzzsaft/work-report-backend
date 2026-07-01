@@ -39,10 +39,32 @@ const authClientIdsFromEnv = () => {
     ? process.env.WECOM_CLIENT_ID || "work-report"
     : values.join(",");
 
-  return normalizedValue
+  const authClientIds = normalizedValue
     .split(",")
     .map((clientId) => clientId.trim())
     .filter(Boolean);
+  const wecomClientIds = wecomAuthClientIdsFromEnv();
+  return [...new Set([...authClientIds, ...wecomClientIds])];
+};
+
+const normalizeWecomClientId = (clientId: unknown) => {
+  const normalized = String(clientId ?? "").trim() || "work-report";
+  return ["legacy-frontend", "new-frontend"].includes(normalized) ? "work-report" : normalized;
+};
+
+const wecomAuthClientIdsFromEnv = () => {
+  const rawConfig = process.env.WECHAT_AUTH_CLIENTS ?? process.env.WECOM_AUTH_CLIENTS;
+  if (!rawConfig?.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(rawConfig) as Array<{ apps?: Array<{ clientId?: unknown }> }>;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((corp) =>
+      (corp.apps ?? []).map((app) => normalizeWecomClientId(app.clientId)).filter(Boolean)
+    );
+  } catch {
+    return [];
+  }
 };
 
 export const config = {

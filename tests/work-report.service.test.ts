@@ -125,6 +125,80 @@ describe("WorkReportService", () => {
     );
   });
 
+  it("returns paginated report records and treats datetime endTime as an exact boundary", async () => {
+    const count = vi.fn().mockResolvedValue(3);
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "assignment-1",
+        workOrder: { orderNo: "WO-001", productName: "产品A" },
+        part: { partCode: "P-001", partName: "零件A" },
+        operationPool: { operationCode: "OP-001", operationName: "粗加工" },
+        workerName: "张师傅",
+        status: "completed",
+        claimedAt: new Date("2026-07-01T01:00:00.000Z"),
+        estimatedHours: 2,
+        session: {
+          id: "session-1",
+          startedAt: new Date("2026-07-01T01:00:00.000Z"),
+          completedAt: new Date("2026-07-01T03:00:00.000Z"),
+          accumulatedSeconds: 7200
+        }
+      }
+    ]);
+    const db = { operationAssignment: { count, findMany } };
+    const service = new WorkReportService(db as never);
+
+    await expect(
+      service.getReports({
+        orderNo: "WO",
+        startTime: "2026-07-01T00:00:00",
+        endTime: "2026-07-01T12:00:00",
+        page: 2,
+        pageSize: 1
+      })
+    ).resolves.toEqual({
+      items: [
+        {
+          id: "assignment-1",
+          orderNo: "WO-001",
+          productName: "产品A",
+          partCode: "P-001",
+          partName: "零件A",
+          operationCode: "OP-001",
+          operationName: "粗加工",
+          operatorName: "张师傅",
+          status: "completed",
+          claimedAt: "2026-07-01T01:00:00.000Z",
+          estimatedHours: 2,
+          durationHours: 2,
+          startedAt: "2026-07-01T01:00:00.000Z",
+          completedAt: "2026-07-01T03:00:00.000Z",
+          photos: []
+        }
+      ],
+      page: 2,
+      pageSize: 1,
+      total: 3,
+      hasMore: true
+    });
+
+    const where = {
+      workOrder: { orderNo: { contains: "WO", mode: "insensitive" } },
+      claimedAt: {
+        gte: new Date("2026-07-01T00:00:00"),
+        lt: new Date("2026-07-01T12:00:00")
+      }
+    };
+    expect(count).toHaveBeenCalledWith({ where });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where,
+        skip: 1,
+        take: 1
+      })
+    );
+  });
+
   it("clamps claimable product pagination and preserves total when page is out of range", async () => {
     const count = vi.fn().mockResolvedValue(3);
     const findMany = vi.fn().mockResolvedValue([]);

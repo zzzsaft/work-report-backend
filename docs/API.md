@@ -1101,6 +1101,59 @@ POST /admin/xft/import-hours/manual
 }
 ```
 
+## 管理端报工记录
+
+### 查询报工记录
+
+```http
+GET /admin/reports
+```
+
+需要 `admin` 或 `leader` 权限。支持查询参数：
+
+| 参数 | 说明 |
+| --- | --- |
+| `keyword` | 在工单号、产品名、零件、工序、员工姓名中模糊搜索 |
+| `orderNo` | 按工单号模糊搜索 |
+| `operatorName` | 按操作人姓名模糊搜索 |
+| `status` | 按报工状态精确筛选 |
+| `operationCode` | 按工序编号模糊搜索 |
+| `operationName` | 按工序名称模糊搜索 |
+| `startTime` | `claimedAt >= startTime` |
+| `endTime` | 日期格式按当天结束；日期时间格式作为精确上界 |
+| `page` | 页码，默认 `1` |
+| `pageSize` | 每页数量，默认 `50`，最大 `100` |
+
+响应：
+
+```json
+{
+  "items": [
+    {
+      "id": "assignment-1",
+      "orderNo": "WO-001",
+      "productName": "产品A",
+      "partCode": "P-001",
+      "partName": "零件A",
+      "operationCode": "OP-001",
+      "operationName": "粗加工",
+      "operatorName": "张师傅",
+      "status": "completed",
+      "claimedAt": "2026-07-01T01:00:00.000Z",
+      "estimatedHours": 2,
+      "durationHours": 2,
+      "startedAt": "2026-07-01T01:00:00.000Z",
+      "completedAt": "2026-07-01T03:00:00.000Z",
+      "photos": []
+    }
+  ],
+  "page": 1,
+  "pageSize": 50,
+  "total": 1,
+  "hasMore": false
+}
+```
+
 ## 已挂载但暂未实现的接口
 
 以下接口当前存在路由，但返回空数据或 `501`，还不能作为完整业务能力使用：
@@ -1115,7 +1168,6 @@ POST /admin/xft/import-hours/manual
 | `POST /assignments/:id/complete` | 返回 `501` |
 | `GET /attendance/me` | 返回 `501` |
 | `GET /admin/dashboard` | 返回 `501` |
-| `GET /admin/reports` | 返回 `501` |
 | `GET /admin/exceptions` | 返回 `501` |
 | `POST /admin/exceptions/:id/resolve` | 返回 `501` |
 | `POST /admin/assignments` | 返回 `501` |

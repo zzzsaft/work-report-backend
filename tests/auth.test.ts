@@ -11,6 +11,7 @@ import {
   getWecomJoinQrcode,
   inviteWecomContacts,
   loadWecomAuthClients,
+  syncWecomUserDepartmentIds,
   updateWecomContactUser
 } from "../src/modules/wecom/service.js";
 
@@ -582,5 +583,12 @@ describe("auth helpers", () => {
     } finally {
       config.wechatProxyCryptoSecret = originalWechatProxyCryptoSecret;
     }
+  });
+
+  it("rejects cursor-based full syncs to avoid replacing partial WeCom department data", async () => {
+    await expect(syncWecomUserDepartmentIds("work-report", { cursor: "next-page" })).rejects.toMatchObject({
+      statusCode: 400,
+      message: "CURSOR_NOT_ALLOWED_FOR_FULL_SYNC"
+    });
   });
 });

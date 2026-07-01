@@ -261,8 +261,10 @@ workReportRouter.get(
         status: z.string().optional(),
         operationCode: z.string().optional(),
         operationName: z.string().optional(),
-        startTime: z.string().optional(),
-        endTime: z.string().optional()
+        startTime: dateStringSchema.optional(),
+        endTime: dateStringSchema.optional(),
+        page: z.coerce.number().int().default(1),
+        pageSize: z.coerce.number().int().default(50)
       })
       .parse(req.query);
     res.json(await workReportService.getReports(query));

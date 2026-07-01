@@ -940,11 +940,14 @@ export const syncWecomUserDepartmentIds = async (clientId: string, options: unkn
   const payload = ensurePlainObject(options, "INVALID_WECOM_USER_DEPARTMENT_SYNC");
   const limit = normalizeOptionalInteger(payload.limit, "limit") ?? 10000;
   if (limit < 1 || limit > 10000) throw new AppError(400, "INVALID_LIMIT");
+  if (normalizeOptionalString(payload.cursor)) {
+    throw new AppError(400, "CURSOR_NOT_ALLOWED_FOR_FULL_SYNC");
+  }
 
   const client = getWecomAuthClient(clientId);
   const accessToken = await getContactAccessToken(client);
   const rows: Array<{ userid: string; department: number }> = [];
-  let cursor = normalizeOptionalString(payload.cursor) ?? "";
+  let cursor = "";
   let nextCursor = "";
 
   do {
