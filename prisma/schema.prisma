@@ -278,7 +278,7 @@ model WorkOrder {
 model WorkOrderPart {
   id                String           @id @default(cuid())
   workOrderId       String           @map("work_order_id")
-  partNo            String?          @map("part_no")
+  partNo            String           @map("part_no")
   partCode          String           @map("part_code")
   partName          String           @map("part_name")
   plannedQuantity   Int              @map("planned_quantity")
@@ -298,7 +298,7 @@ model OperationPool {
   id                String           @id @default(cuid())
   workOrderId       String           @map("work_order_id")
   partId            String           @map("part_id")
-  operationNo       String?          @map("operation_no")
+  operationNo       String           @map("operation_no")
   operationCode     String           @map("operation_code")
   operationName     String           @map("operation_name")
   operationNote     String           @default("") @map("operation_note")

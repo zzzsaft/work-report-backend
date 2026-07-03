@@ -78,6 +78,56 @@ const parseThirdPartyImportPayload = (body: unknown) => {
   return Array.isArray(payload) ? payload : payload.operations;
 };
 
+const actualTimeSchema = z
+  .object({
+    startTime: z.string().trim().min(1).optional(),
+    endTime: z.string().trim().min(1).optional()
+  })
+  .optional()
+  .superRefine((value, ctx) => {
+    if (!value?.startTime && !value?.endTime) return;
+    if (!value.startTime || !value.endTime) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "startTime 和 endTime 必须同时提供"
+      });
+      return;
+    }
+
+    const start = new Date(value.startTime);
+    const end = new Date(value.endTime);
+    if (Number.isNaN(start.getTime())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["startTime"],
+        message: "startTime 格式无效"
+      });
+    }
+    if (Number.isNaN(end.getTime())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endTime"],
+        message: "endTime 格式无效"
+      });
+    }
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end < start) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endTime"],
+        message: "endTime 不能早于 startTime"
+      });
+    }
+  });
+
+const parseActualTimeOptions = (body: unknown) => {
+  const value = actualTimeSchema.parse(body);
+  if (!value?.startTime || !value.endTime) return undefined;
+  return {
+    startTime: new Date(value.startTime),
+    endTime: new Date(value.endTime)
+  };
+};
+
 const convertLeaderRowsToThirdPartyOperations = (body: unknown) => {
   const payload = leaderImportSchema.parse(body);
   return payload.rows.map((row) => ({
@@ -167,23 +217,8 @@ workReportRouter.get(
 workReportRouter.post(
   "/claim/operations/:operationId/claim",
   asyncHandler(async (req, res) => {
-    const body = z
-      .object({
-        startTime: z.string().trim().optional(),
-        endTime: z.string().trim().optional()
-      })
-      .optional()
-      .parse(req.body);
-    const toTime = (value?: string) => {
-      if (!value) return undefined;
-      const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? undefined : date;
-    };
     res.status(201).json(
-      await workReportService.claimOperation(req.params.operationId, requireUser(req), {
-        startTime: toTime(body?.startTime),
-        endTime: toTime(body?.endTime)
-      })
+      await workReportService.claimOperation(req.params.operationId, requireUser(req), parseActualTimeOptions(req.body))
     );
   })
 );

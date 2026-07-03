@@ -7,7 +7,7 @@ import type {
   WorkOrderPart,
   WorkSession
 } from "@prisma/client";
-import { defaultHourAllocation } from "./hour-allocation.js";
+import { defaultHourAllocation, type HourAllocationResult } from "./hour-allocation.js";
 
 type AssignmentRow = OperationAssignment & {
   workOrder: WorkOrder;
@@ -21,9 +21,10 @@ type AssignmentRow = OperationAssignment & {
 export const toDateTime = (value: Date | null | undefined) => value?.toISOString();
 export const toDate = (value: Date) => value.toISOString().slice(0, 10);
 
-export const serializeAssignment = (assignment: AssignmentRow) => {
-  const hourAllocation = defaultHourAllocation(assignment);
-
+export const serializeAssignment = (
+  assignment: AssignmentRow,
+  hourAllocation: HourAllocationResult = defaultHourAllocation(assignment)
+) => {
   return {
     id: assignment.id,
     workOrderId: assignment.workOrderId,

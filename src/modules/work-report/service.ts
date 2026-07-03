@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
+import { uniqueValues } from "../../lib/arrays.js";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthenticatedUser } from "../../middleware/auth.js";
 import {
@@ -176,8 +177,6 @@ const reportDateRange = (startTime?: string, endTime?: string) => {
   return range;
 };
 
-const uniqueValues = <T>(values: T[]) => Array.from(new Set(values));
-
 export class WorkReportService {
   private readonly importService: WorkReportImportService;
 
@@ -333,7 +332,7 @@ export class WorkReportService {
       orderBy: [{ claimedAt: "desc" }, { plannedStart: "desc" }]
     });
 
-    return assignments.map(serializeAssignment);
+    return assignments.map((assignment) => serializeAssignment(assignment));
   };
 
   searchClaimableProducts = async (keyword = "", page = 1, pageSize = 4) => {

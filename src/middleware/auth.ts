@@ -307,51 +307,19 @@ const serializeDbUser = (user: User & {
   roles: user.userRoles.map((item) => item.role.code)
 });
 
+type DbUserWithRoles = Prisma.UserGetPayload<{
+  include: { userRoles: { include: { role: true } } };
+}>;
+
 const resolveLocalUser = async (localUser: NonNullable<ReturnType<typeof verifyLocalToken>>) => {
   const existingUser = await prisma.user.findUnique({
     where: { id: localUser.userId },
     include: { userRoles: { include: { role: true } } }
   });
 
-  interface DbUserWithRoles {
-    id: string;
-    name: string;
-    wecomUserId: string | null;
-    employeeNo: string | null;
-    nameInitials: string | null;
-    avatar: string | null;
-    teamName: string | null;
-    status: string;
-    createdAt: Date;
-    updatedAt: Date;
-    gender: string | null;
-    qrCode: string | null;
-    mobile: string | null;
-    email: string | null;
-    bizMail: string | null;
-    address: string | null;
-    department: Prisma.JsonValue | null;
-    departmentOrder: Prisma.JsonValue | null;
-    position: string | null;
-    isLeaderInDept: Prisma.JsonValue | null;
-    directLeader: Prisma.JsonValue | null;
-    telephone: string | null;
-    alias: string | null;
-    extattr: Prisma.JsonValue | null;
-    wecomStatus: number | null;
-    externalProfile: Prisma.JsonValue | null;
-    externalPosition: string | null;
-    openUserid: string | null;
-    mainDepartment: number | null;
-    userRoles: Array<{ role: { code: string } }>;
-    username: string | null;
-    passwordHash: string | null;
-    lastLoginAt: Date | null;
-  }
-
   if (existingUser) {
     if (existingUser.status !== "active") throw new AppError(401, "token 缺失或失效");
-    const user = existingUser as unknown as DbUserWithRoles;
+    const user: DbUserWithRoles = existingUser;
     const nextName = localUser.name || user.name;
     const nextWecomUserId =
       typeof localUser.wecomUserId === "string" && localUser.wecomUserId.trim()

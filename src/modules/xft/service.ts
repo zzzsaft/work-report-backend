@@ -2,6 +2,7 @@ import axios from "axios";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import pkg from "sm-crypto";
 import { config } from "../../lib/config.js";
+import { uniqueValues } from "../../lib/arrays.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
 import { calculateHourAllocations, defaultHourAllocation } from "../work-report/hour-allocation.js";
@@ -390,12 +391,10 @@ export class XftService {
       },
       orderBy: [{ workerName: "asc" }, { plannedStart: "asc" }]
     });
-    const operationPoolIds = Array.from(
-      new Set(
-        assignments
-          .map((assignment) => assignment.operationPoolId)
-          .filter((operationPoolId): operationPoolId is string => typeof operationPoolId === "string")
-      )
+    const operationPoolIds = uniqueValues(
+      assignments
+        .map((assignment) => assignment.operationPoolId)
+        .filter((operationPoolId): operationPoolId is string => typeof operationPoolId === "string")
     );
     const allocationParticipants = operationPoolIds.length
       ? await this.db.operationAssignment.findMany({
