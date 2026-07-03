@@ -74,9 +74,10 @@ const main = async () => {
   });
 
   const part = await prisma.workOrderPart.upsert({
-    where: { workOrderId_partCode: { workOrderId: workOrder.id, partCode: "PART-CASE-001" } },
+    where: { workOrderId_partNo: { workOrderId: workOrder.id, partNo: "0" } },
     create: {
       workOrderId: workOrder.id,
+      partNo: "0",
       partCode: "PART-CASE-001",
       partName: "壳体主件",
       plannedQuantity: 40,
@@ -87,15 +88,16 @@ const main = async () => {
 
   await prisma.operationPool.upsert({
     where: {
-      workOrderId_partId_operationCode: {
+      workOrderId_partId_operationNo: {
         workOrderId: workOrder.id,
         partId: part.id,
-        operationCode: "OP-060"
+        operationNo: "60"
       }
     },
     create: {
       workOrderId: workOrder.id,
       partId: part.id,
+      operationNo: "60",
       operationCode: "OP-060",
       operationName: "终检前倒角",
       operationNote: "重点检查窗口边、孔口倒角，完成后流转终检。",
