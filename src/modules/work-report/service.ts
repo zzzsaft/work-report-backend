@@ -437,6 +437,7 @@ export class WorkReportService {
         },
         part: {
           select: {
+            partNo: true,
             partCode: true,
             partName: true
           }

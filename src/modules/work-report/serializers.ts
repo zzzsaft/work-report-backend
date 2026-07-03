@@ -111,7 +111,7 @@ type OperationRow = Pick<
   | "status"
 > & {
   workOrder: Pick<WorkOrder, "orderNo" | "productCode" | "productName">;
-  part: Pick<WorkOrderPart, "partCode" | "partName">;
+  part: Pick<WorkOrderPart, "partNo" | "partCode" | "partName">;
 };
 
 export const serializeProduct = (order: ProductRow) => ({
@@ -143,6 +143,7 @@ export const serializeOperation = (operation: OperationRow) => ({
   orderNo: operation.workOrder.orderNo,
   productCode: operation.workOrder.productCode,
   productName: operation.workOrder.productName,
+  partNo: operation.part.partNo ?? "",
   partCode: operation.part.partCode,
   partName: operation.part.partName,
   operationNo: operation.operationNo ?? "",
