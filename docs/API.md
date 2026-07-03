@@ -802,9 +802,31 @@ GET /statistics/me?period=day|week|month
   "overtimeHours": 0,
   "completedOperations": 3,
   "attendanceDays": 2,
+  "hourAllocation": {
+    "allocationTemporary": true,
+    "method": "actual_duration_ratio",
+    "appliedCount": 3,
+    "totalCount": 3,
+    "items": [
+      {
+        "assignmentId": "assignment-1",
+        "operationPoolId": "operation-1",
+        "allocatedHours": 2.5,
+        "originalEstimatedHours": 10,
+        "allocationApplied": true,
+        "allocationTemporary": true,
+        "allocationMethod": "actual_duration_ratio",
+        "allocationRatio": 0.25,
+        "allocationBasisSeconds": 3600,
+        "allocationParticipantCount": 2
+      }
+    ]
+  },
   "trend": []
 }
 ```
+
+当前工时分摊为临时口径：同一工序下未取消报工按 `actualEndAt - actualStartAt` 的实际时长占比分配工序标准工时；无有效实际时长时退回原 `estimatedHours`，并通过 `hourAllocation.allocationApplied=false` 标记。
 
 ### 管理端工单列表
 
@@ -1069,7 +1091,7 @@ POST /admin/xft/import-hours/manual
 { "salaryPeriod": "202606" }
 ```
 
-后端会按薪资期间汇总 `OperationAssignment`：排除 `cancelled`，优先用 `claimedAt` 匹配期间，`claimedAt` 为空时用 `plannedStart`；员工号来自 `worker.employeeNo`，为空时使用 `workerId`；工时使用 `estimatedHours`。
+后端会按薪资期间汇总 `OperationAssignment`：排除 `cancelled`，优先用 `claimedAt` 匹配期间，`claimedAt` 为空时用 `plannedStart`；员工号来自 `worker.employeeNo`，为空时使用 `workerId`；工时使用临时分摊工时，同一工序下未取消报工按 `actualEndAt - actualStartAt` 的实际时长占比分配工序标准工时，无有效实际时长时退回原 `estimatedHours`。预览行会返回 `hourAllocation`，其中 `allocationTemporary=true` 表示当前是临时分摊口径。
 
 `/manual` 请求体：
 
@@ -1141,9 +1163,23 @@ GET /admin/reports
       "status": "completed",
       "claimedAt": "2026-07-01T01:00:00.000Z",
       "estimatedHours": 2,
+      "allocatedHours": 2,
+      "originalEstimatedHours": 2,
+      "hourAllocation": {
+        "allocatedHours": 2,
+        "originalEstimatedHours": 2,
+        "allocationApplied": true,
+        "allocationTemporary": true,
+        "allocationMethod": "actual_duration_ratio",
+        "allocationRatio": 1,
+        "allocationBasisSeconds": 7200,
+        "allocationParticipantCount": 1
+      },
       "durationHours": 2,
       "startedAt": "2026-07-01T01:00:00.000Z",
       "completedAt": "2026-07-01T03:00:00.000Z",
+      "actualStartAt": "2026-07-01T01:00:00.000Z",
+      "actualEndAt": "2026-07-01T03:00:00.000Z",
       "photos": []
     }
   ],

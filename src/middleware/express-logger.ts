@@ -5,6 +5,12 @@ import { EXPRESS_LOG_OPTIONS, sanitizeLogPayload } from "../lib/log-sanitizer.js
 
 type SendBody = Parameters<Response["send"]>[0];
 
+const shouldLogResponseBody = (path: string) =>
+  path !== "/leader/operations/import" &&
+  path !== "/api/operations/import" &&
+  path !== "/admin/xft/import-hours" &&
+  path !== "/admin/xft/import-hours/manual";
+
 export const expressLogger: RequestHandler = (req, res, next) => {
   const startedAt = process.hrtime.bigint();
   const originalJson = res.json.bind(res);
@@ -42,7 +48,9 @@ export const expressLogger: RequestHandler = (req, res, next) => {
           userAgent: req.get("user-agent"),
           userId: req.user?.id,
           requestBody: sanitizeLogPayload(req.body, EXPRESS_LOG_OPTIONS) ?? Prisma.JsonNull,
-          responseBody: sanitizeLogPayload(responseBody, EXPRESS_LOG_OPTIONS) ?? Prisma.JsonNull,
+          responseBody: shouldLogResponseBody(req.path)
+            ? sanitizeLogPayload(responseBody, EXPRESS_LOG_OPTIONS) ?? Prisma.JsonNull
+            : Prisma.JsonNull,
           errorMessage
         }
       })

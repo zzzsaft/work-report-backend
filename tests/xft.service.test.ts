@@ -118,7 +118,13 @@ describe("XftService", () => {
         staffNumber: "000002",
         hours: 3.25,
         identityNumber: "",
-        staffId: ""
+        staffId: "",
+        hourAllocation: {
+          allocationTemporary: true,
+          method: "actual_duration_ratio",
+          appliedCount: 0,
+          totalCount: 2
+        }
       }
     ]);
 
@@ -133,6 +139,55 @@ describe("XftService", () => {
         }
       })
     );
+  });
+
+  it("previews salary hours with temporary actual-duration allocation", async () => {
+    const workerAssignment = {
+      id: "assignment-1",
+      operationPoolId: "operation-1",
+      workerId: "u1",
+      workerName: "小灰16",
+      estimatedHours: 10,
+      actualStartAt: new Date(2026, 5, 10, 8),
+      actualEndAt: new Date(2026, 5, 10, 9),
+      operationPool: { estimatedHours: 10 },
+      worker: { employeeNo: "000002", name: "小灰16" }
+    };
+    const coworkerAssignment = {
+      id: "assignment-2",
+      operationPoolId: "operation-1",
+      workerId: "u2",
+      workerName: "张师傅",
+      estimatedHours: 10,
+      actualStartAt: new Date(2026, 5, 10, 8),
+      actualEndAt: new Date(2026, 5, 10, 11),
+      operationPool: { estimatedHours: 10 }
+    };
+    const findMany = vi
+      .fn()
+      .mockResolvedValueOnce([workerAssignment])
+      .mockResolvedValueOnce([workerAssignment, coworkerAssignment]);
+    const service = new XftService({
+      xftIntegrationConfig: { findUnique: vi.fn().mockResolvedValue(persistedConfig) },
+      operationAssignment: { findMany }
+    } as never);
+
+    await expect(service.previewHours("202606")).resolves.toEqual([
+      {
+        lineId: 1,
+        staffName: "小灰16",
+        staffNumber: "000002",
+        hours: 2.5,
+        identityNumber: "",
+        staffId: "",
+        hourAllocation: {
+          allocationTemporary: true,
+          method: "actual_duration_ratio",
+          appliedCount: 1,
+          totalCount: 1
+        }
+      }
+    ]);
   });
 
   it("builds xft collection payload with stringified collectionData", () => {

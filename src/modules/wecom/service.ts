@@ -150,6 +150,7 @@ export const DEFAULT_WECOM_CLIENT_ID = "work-report";
 const OLD_WECOM_CLIENT_IDS = new Set(["legacy-frontend", "new-frontend"]);
 
 const accessTokenCache = new Map<string, { token: string; expiresAt: number }>();
+let defaultAuthClientsCache: WecomAuthClient[] | null = null;
 
 const parseOriginList = (value?: string) => {
   if (!value?.trim()) return [];
@@ -262,9 +263,14 @@ export const loadWecomAuthClients = (env: NodeJS.ProcessEnv = process.env, cwd =
   return [...byClientId.values()];
 };
 
+const getDefaultWecomAuthClients = () => {
+  defaultAuthClientsCache ??= loadWecomAuthClients();
+  return defaultAuthClientsCache;
+};
+
 export const getWecomAuthClient = (clientId: string) => {
   const normalizedClientId = normalizeWecomClientId(clientId);
-  const client = loadWecomAuthClients().find((item) => item.clientId === normalizedClientId);
+  const client = getDefaultWecomAuthClients().find((item) => item.clientId === normalizedClientId);
   if (!client) throw new AppError(400, "INVALID_CLIENT");
   return client;
 };
@@ -1045,4 +1051,5 @@ export const getWecomJoinQrcode = async (clientId: string, sizeType: unknown = 3
 
 export const clearWecomAuthCache = () => {
   accessTokenCache.clear();
+  defaultAuthClientsCache = null;
 };

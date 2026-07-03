@@ -13,6 +13,11 @@ import { xftRouter } from "./modules/xft/routes.js";
 
 installAxiosLogger();
 
+const shouldKeepRawBody = (req: express.Request) =>
+  req.path === "/leader/operations/import" ||
+  req.path === "/api/operations/import" ||
+  Boolean(req.header("x-import-signature"));
+
 export const createApp = () => {
   const app = express();
 
@@ -29,7 +34,8 @@ export const createApp = () => {
     express.json({
       limit: "20mb",
       verify: (req, _res, buf) => {
-        (req as express.Request).rawBody = buf.toString("utf8");
+        const request = req as express.Request;
+        if (shouldKeepRawBody(request)) request.rawBody = buf.toString("utf8");
       },
     }),
   );

@@ -334,17 +334,17 @@ workReportRouter.post(
   })
 );
 
-workReportRouter.get(
+workReportRouter.post(
   "/api/operations/complete",
   asyncHandler(async (req, res) => {
-    const query = z
+    const body = z
       .object({
         orderNo: z.string().trim().min(1),
         partNo: z.string().trim().min(1),
         operationNo: z.string().trim().min(1)
       })
-      .parse(req.query);
-    res.json(await workReportService.completeOperation(query.orderNo, query.partNo, query.operationNo));
+      .parse(req.body);
+    res.json(await workReportService.completeOperation(body.orderNo, body.partNo, body.operationNo));
   })
 );
 

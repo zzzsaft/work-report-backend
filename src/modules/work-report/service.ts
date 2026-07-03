@@ -20,6 +20,12 @@ import {
   WorkReportImportService,
   type ThirdPartyImportOperation
 } from "./import-service.js";
+import {
+  calculateHourAllocations,
+  defaultHourAllocation,
+  type HourAllocationInput,
+  type HourAllocationResult
+} from "./hour-allocation.js";
 
 export { MAX_IMPORT_OPERATIONS, type ThirdPartyImportOperation };
 
@@ -105,9 +111,10 @@ const serializeWorkerPermission = (worker: {
 
 const serializeReportRecord = (assignment: {
   id: string;
+  operationPoolId: string;
   workOrder: { orderNo: string; productName: string };
   part: { partCode: string; partName: string };
-  operationPool: { operationCode: string; operationName: string };
+  operationPool: { operationCode: string; operationName: string; estimatedHours: number };
   workerName: string;
   status: string;
   claimedAt: Date | null;
@@ -120,9 +127,10 @@ const serializeReportRecord = (assignment: {
     completedAt: Date | null;
     accumulatedSeconds: number;
   } | null;
-}) => {
+}, allocation?: HourAllocationResult) => {
   const durationSeconds = assignment.session?.accumulatedSeconds ?? 0;
   const durationHours = Math.round((durationSeconds / 3600) * 10) / 10;
+  const hourAllocation = allocation ?? defaultHourAllocation(assignment);
 
   return {
     id: assignment.id,
@@ -136,6 +144,9 @@ const serializeReportRecord = (assignment: {
     status: assignment.status,
     claimedAt: assignment.claimedAt?.toISOString(),
     estimatedHours: assignment.estimatedHours ?? 0,
+    allocatedHours: hourAllocation.allocatedHours,
+    originalEstimatedHours: hourAllocation.originalEstimatedHours,
+    hourAllocation,
     durationHours,
     startedAt: assignment.session?.startedAt?.toISOString(),
     completedAt: assignment.session?.completedAt?.toISOString(),
@@ -164,6 +175,8 @@ const reportDateRange = (startTime?: string, endTime?: string) => {
   }
   return range;
 };
+
+const uniqueValues = <T>(values: T[]) => Array.from(new Set(values));
 
 export class WorkReportService {
   private readonly importService: WorkReportImportService;
@@ -239,7 +252,7 @@ export class WorkReportService {
         include: {
           workOrder: { select: { orderNo: true, productName: true } },
           part: { select: { partCode: true, partName: true } },
-          operationPool: { select: { operationCode: true, operationName: true } },
+          operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true } },
           session: {
             select: { id: true, startedAt: true, completedAt: true, accumulatedSeconds: true }
           }
@@ -249,9 +262,31 @@ export class WorkReportService {
         orderBy: [{ claimedAt: "desc" }, { id: "desc" }]
       })
     ]);
+    const operationPoolIds = uniqueValues(
+      assignments
+        .map((assignment) => assignment.operationPoolId)
+        .filter((operationPoolId): operationPoolId is string => typeof operationPoolId === "string")
+    );
+    const allocationParticipants = operationPoolIds.length
+      ? await this.db.operationAssignment.findMany({
+          where: {
+            operationPoolId: { in: operationPoolIds },
+            status: { not: ASSIGNMENT_STATUS.cancelled }
+          },
+          select: {
+            id: true,
+            operationPoolId: true,
+            estimatedHours: true,
+            actualStartAt: true,
+            actualEndAt: true,
+            operationPool: { select: { estimatedHours: true } }
+          }
+        })
+      : [];
+    const allocations = calculateHourAllocations(allocationParticipants);
 
     return {
-      items: assignments.map(serializeReportRecord),
+      items: assignments.map((assignment) => serializeReportRecord(assignment, allocations.get(assignment.id))),
       page: safePage,
       pageSize: safePageSize,
       total,
@@ -278,7 +313,7 @@ export class WorkReportService {
       include: {
         workOrder: { select: { orderNo: true, productName: true } },
         part: { select: { partCode: true, partName: true } },
-        operationPool: { select: { operationCode: true, operationName: true } },
+        operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true } },
         session: {
           select: { id: true, startedAt: true, completedAt: true, accumulatedSeconds: true }
         }
@@ -322,9 +357,16 @@ export class WorkReportService {
       this.db.workOrder.count({ where }),
       this.db.workOrder.findMany({
         where,
-        include: {
+        select: {
+          id: true,
+          orderNo: true,
+          productCode: true,
+          productName: true,
+          plannedQuantity: true,
+          completedQuantity: true,
           operationPools: {
-            where: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } }
+            where: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } },
+            select: { remainingQuantity: true }
           }
         },
         skip: (safePage - 1) * safePageSize,
@@ -348,9 +390,17 @@ export class WorkReportService {
         workOrderId: productId,
         operationPools: { some: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } } }
       },
-      include: {
+      select: {
+        id: true,
+        workOrderId: true,
+        partNo: true,
+        partCode: true,
+        partName: true,
+        plannedQuantity: true,
+        completedQuantity: true,
         operationPools: {
-          where: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } }
+          where: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } },
+          select: { remainingQuantity: true }
         }
       }
     });
@@ -364,7 +414,34 @@ export class WorkReportService {
         partId,
         status: { in: [...CLAIMABLE_OPERATION_STATUSES] }
       },
-      include: { workOrder: true, part: true }
+      select: {
+        id: true,
+        workOrderId: true,
+        partId: true,
+        operationNo: true,
+        operationCode: true,
+        operationName: true,
+        operationNote: true,
+        plannedQuantity: true,
+        plannedStart: true,
+        estimatedHours: true,
+        claimedWorkers: true,
+        maxClaimWorkers: true,
+        status: true,
+        workOrder: {
+          select: {
+            orderNo: true,
+            productCode: true,
+            productName: true
+          }
+        },
+        part: {
+          select: {
+            partCode: true,
+            partName: true
+          }
+        }
+      }
     });
 
     return operations.sort((a, b) => Number(a.operationNo || 0) - Number(b.operationNo || 0)).map(serializeOperation);
@@ -521,12 +598,51 @@ export class WorkReportService {
           { claimedAt: { gte: start, lt: end } },
           { claimedAt: null, plannedStart: { gte: start, lt: end } }
         ]
+      },
+      select: {
+        id: true,
+        operationPoolId: true,
+        estimatedHours: true,
+        actualStartAt: true,
+        actualEndAt: true,
+        claimedAt: true,
+        plannedStart: true,
+        operationPool: { select: { estimatedHours: true } }
       }
     });
+    const operationPoolIds = uniqueValues(
+      assignments
+        .map((assignment) => assignment.operationPoolId)
+        .filter((operationPoolId): operationPoolId is string => typeof operationPoolId === "string")
+    );
+    const allocationParticipants = operationPoolIds.length
+      ? await this.db.operationAssignment.findMany({
+          where: {
+            operationPoolId: { in: operationPoolIds },
+            status: { not: ASSIGNMENT_STATUS.cancelled }
+          },
+          select: {
+            id: true,
+            operationPoolId: true,
+            estimatedHours: true,
+            actualStartAt: true,
+            actualEndAt: true,
+            operationPool: { select: { estimatedHours: true } }
+          }
+        })
+      : [];
+    const allocations = calculateHourAllocations(allocationParticipants);
 
     const totalHours = Number(
-      assignments.reduce((total, item) => total + (item.estimatedHours ?? 0), 0).toFixed(2)
+      assignments
+        .reduce((total, item) => total + (allocations.get(item.id) ?? defaultHourAllocation(item)).allocatedHours, 0)
+        .toFixed(2)
     );
+    const allocatedAssignments = assignments.map((item) => ({
+      assignmentId: item.id,
+      operationPoolId: item.operationPoolId,
+      ...(allocations.get(item.id) ?? defaultHourAllocation(item))
+    }));
     const attendanceDays = new Set(
       assignments.map((item) => getDateKey(item.claimedAt ?? item.plannedStart))
     ).size;
@@ -538,6 +654,13 @@ export class WorkReportService {
       overtimeHours: 0,
       completedOperations: assignments.length,
       attendanceDays,
+      hourAllocation: {
+        allocationTemporary: true,
+        method: "actual_duration_ratio",
+        appliedCount: allocatedAssignments.filter((item) => item.allocationApplied).length,
+        totalCount: allocatedAssignments.length,
+        items: allocatedAssignments
+      },
       trend: []
     };
   };
@@ -603,9 +726,16 @@ export class WorkReportService {
   getWorkerPermissions = async () => {
     const workers = await this.db.user.findMany({
       orderBy: [{ teamName: "asc" }, { name: "asc" }],
-      include: {
+      select: {
+        id: true,
+        employeeNo: true,
+        name: true,
+        nameInitials: true,
+        teamName: true,
         userRoles: {
-          include: { role: true }
+          select: {
+            role: { select: { code: true } }
+          }
         }
       }
     });

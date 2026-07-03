@@ -87,9 +87,16 @@ describe("WorkReportService", () => {
     expect(count).toHaveBeenCalledWith({ where });
     expect(findMany).toHaveBeenCalledWith({
       where,
-      include: {
+      select: {
+        id: true,
+        orderNo: true,
+        productCode: true,
+        productName: true,
+        plannedQuantity: true,
+        completedQuantity: true,
         operationPools: {
-          where: { status: { in: ["available", "claimed"] } }
+          where: { status: { in: ["available", "claimed"] } },
+          select: { remainingQuantity: true }
         }
       },
       skip: 2,
@@ -130,13 +137,16 @@ describe("WorkReportService", () => {
     const findMany = vi.fn().mockResolvedValue([
       {
         id: "assignment-1",
+        operationPoolId: "operation-1",
         workOrder: { orderNo: "WO-001", productName: "产品A" },
         part: { partCode: "P-001", partName: "零件A" },
-        operationPool: { operationCode: "OP-001", operationName: "粗加工" },
+        operationPool: { operationCode: "OP-001", operationName: "粗加工", estimatedHours: 2 },
         workerName: "张师傅",
         status: "completed",
         claimedAt: new Date("2026-07-01T01:00:00.000Z"),
         estimatedHours: 2,
+        actualStartAt: new Date("2026-07-01T01:00:00.000Z"),
+        actualEndAt: new Date("2026-07-01T03:00:00.000Z"),
         session: {
           id: "session-1",
           startedAt: new Date("2026-07-01T01:00:00.000Z"),
@@ -170,9 +180,23 @@ describe("WorkReportService", () => {
           status: "completed",
           claimedAt: "2026-07-01T01:00:00.000Z",
           estimatedHours: 2,
+          allocatedHours: 2,
+          originalEstimatedHours: 2,
+          hourAllocation: {
+            allocatedHours: 2,
+            originalEstimatedHours: 2,
+            allocationApplied: true,
+            allocationTemporary: true,
+            allocationMethod: "actual_duration_ratio",
+            allocationRatio: 1,
+            allocationBasisSeconds: 7200,
+            allocationParticipantCount: 1
+          },
           durationHours: 2,
           startedAt: "2026-07-01T01:00:00.000Z",
           completedAt: "2026-07-01T03:00:00.000Z",
+          actualStartAt: "2026-07-01T01:00:00.000Z",
+          actualEndAt: "2026-07-01T03:00:00.000Z",
           photos: []
         }
       ],
@@ -390,6 +414,16 @@ describe("WorkReportService", () => {
             }
           }
         ]
+      },
+      select: {
+        id: true,
+        operationPoolId: true,
+        estimatedHours: true,
+        actualStartAt: true,
+        actualEndAt: true,
+        claimedAt: true,
+        plannedStart: true,
+        operationPool: { select: { estimatedHours: true } }
       }
     });
   });
@@ -436,8 +470,84 @@ describe("WorkReportService", () => {
             }
           }
         ]
+      },
+      select: {
+        id: true,
+        operationPoolId: true,
+        estimatedHours: true,
+        actualStartAt: true,
+        actualEndAt: true,
+        claimedAt: true,
+        plannedStart: true,
+        operationPool: { select: { estimatedHours: true } }
       }
     });
+  });
+
+  it("allocates one operation's standard hours by actual duration ratio", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 25, 10));
+
+    const userAssignment = {
+      id: "assignment-1",
+      operationPoolId: "operation-1",
+      estimatedHours: 10,
+      actualStartAt: new Date(2026, 5, 25, 8),
+      actualEndAt: new Date(2026, 5, 25, 9),
+      claimedAt: new Date(2026, 5, 25, 8),
+      plannedStart: new Date(2026, 5, 25, 8),
+      operationPool: { estimatedHours: 10 }
+    };
+    const coworkerAssignment = {
+      id: "assignment-2",
+      operationPoolId: "operation-1",
+      estimatedHours: 10,
+      actualStartAt: new Date(2026, 5, 25, 8),
+      actualEndAt: new Date(2026, 5, 25, 11),
+      operationPool: { estimatedHours: 10 }
+    };
+    const findMany = vi
+      .fn()
+      .mockResolvedValueOnce([userAssignment])
+      .mockResolvedValueOnce([userAssignment, coworkerAssignment]);
+    const db = { operationAssignment: { findMany } };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.getStatistics("day", user)).resolves.toMatchObject({
+      period: "day",
+      totalHours: 2.5,
+      regularHours: 2.5,
+      hourAllocation: {
+        allocationTemporary: true,
+        method: "actual_duration_ratio",
+        appliedCount: 1,
+        totalCount: 1,
+        items: [
+          {
+            assignmentId: "assignment-1",
+            operationPoolId: "operation-1",
+            allocatedHours: 2.5,
+            originalEstimatedHours: 10,
+            allocationApplied: true,
+            allocationTemporary: true,
+            allocationMethod: "actual_duration_ratio",
+            allocationRatio: 0.25,
+            allocationBasisSeconds: 3600,
+            allocationParticipantCount: 2
+          }
+        ]
+      }
+    });
+
+    expect(findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: {
+          operationPoolId: { in: ["operation-1"] },
+          status: { not: "cancelled" }
+        }
+      })
+    );
   });
 
   it("supports month statistics", async () => {
@@ -487,6 +597,16 @@ describe("WorkReportService", () => {
             }
           }
         ]
+      },
+      select: {
+        id: true,
+        operationPoolId: true,
+        estimatedHours: true,
+        actualStartAt: true,
+        actualEndAt: true,
+        claimedAt: true,
+        plannedStart: true,
+        operationPool: { select: { estimatedHours: true } }
       }
     });
   });

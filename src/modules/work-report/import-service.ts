@@ -49,14 +49,6 @@ interface ImportErrorItem {
   message: string;
 }
 
-const chunkArray = <T>(items: T[], size: number) => {
-  const chunks: T[][] = [];
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size));
-  }
-  return chunks;
-};
-
 const lastBy = <T>(items: T[], keyOf: (item: T) => string) => {
   const map = new Map<string, T>();
   for (const item of items) map.set(keyOf(item), item);
@@ -107,7 +99,8 @@ export class WorkReportImportService {
     const { normalized, errors } = normalizeThirdPartyOperations(operations);
     const results: ImportResultItem[] = [];
 
-    for (const batch of chunkArray(normalized, BULK_IMPORT_BATCH_SIZE)) {
+    for (let batchStart = 0; batchStart < normalized.length; batchStart += BULK_IMPORT_BATCH_SIZE) {
+      const batch = normalized.slice(batchStart, batchStart + BULK_IMPORT_BATCH_SIZE);
       try {
         const batchResults = await this.db.$transaction(async (tx) => {
           const uniqueOrders = lastBy(batch, (item) => item.orderNo);

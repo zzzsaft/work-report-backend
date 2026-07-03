@@ -4,6 +4,7 @@ import pkg from "sm-crypto";
 import { config } from "../../lib/config.js";
 import { AppError } from "../../lib/errors.js";
 import { prisma } from "../../lib/prisma.js";
+import { calculateHourAllocations, defaultHourAllocation } from "../work-report/hour-allocation.js";
 
 const { sm2, sm3, sm4 } = pkg;
 
@@ -41,6 +42,12 @@ export interface XftHoursRow {
   hours: number;
   identityNumber: string;
   staffId: string;
+  hourAllocation?: {
+    allocationTemporary: boolean;
+    method: string;
+    appliedCount: number;
+    totalCount: number;
+  };
 }
 
 export interface PersistedXftConfig extends XftConfigInput {
@@ -361,26 +368,85 @@ export class XftService {
           { claimedAt: null, plannedStart: { gte: start, lt: end } }
         ]
       },
-      include: { worker: true },
+      select: {
+        id: true,
+        operationPoolId: true,
+        workerId: true,
+        workerName: true,
+        estimatedHours: true,
+        actualStartAt: true,
+        actualEndAt: true,
+        operationPool: {
+          select: {
+            estimatedHours: true
+          }
+        },
+        worker: {
+          select: {
+            employeeNo: true,
+            name: true
+          }
+        }
+      },
       orderBy: [{ workerName: "asc" }, { plannedStart: "asc" }]
     });
+    const operationPoolIds = Array.from(
+      new Set(
+        assignments
+          .map((assignment) => assignment.operationPoolId)
+          .filter((operationPoolId): operationPoolId is string => typeof operationPoolId === "string")
+      )
+    );
+    const allocationParticipants = operationPoolIds.length
+      ? await this.db.operationAssignment.findMany({
+          where: {
+            operationPoolId: { in: operationPoolIds },
+            status: { not: "cancelled" }
+          },
+          select: {
+            id: true,
+            operationPoolId: true,
+            estimatedHours: true,
+            actualStartAt: true,
+            actualEndAt: true,
+            operationPool: {
+              select: {
+                estimatedHours: true
+              }
+            }
+          }
+        })
+      : [];
+    const allocations = calculateHourAllocations(allocationParticipants);
 
     const grouped = new Map<string, XftHoursRow>();
     for (const assignment of assignments) {
       const staffNumber = assignment.worker.employeeNo || assignment.workerId;
       const key = staffNumber;
+      const hourAllocation = allocations.get(assignment.id) ?? defaultHourAllocation(assignment);
+      const allocatedHours = hourAllocation.allocatedHours;
       const existing = grouped.get(key);
       if (existing) {
-        existing.hours = roundHours(existing.hours + (assignment.estimatedHours ?? 0));
+        existing.hours = roundHours(existing.hours + allocatedHours);
+        if (existing.hourAllocation) {
+          existing.hourAllocation.totalCount += 1;
+          if (hourAllocation.allocationApplied) existing.hourAllocation.appliedCount += 1;
+        }
         continue;
       }
       grouped.set(key, {
         lineId: grouped.size + 1,
         staffName: assignment.workerName || assignment.worker.name,
         staffNumber,
-        hours: roundHours(assignment.estimatedHours ?? 0),
+        hours: roundHours(allocatedHours),
         identityNumber: "",
-        staffId: ""
+        staffId: "",
+        hourAllocation: {
+          allocationTemporary: true,
+          method: "actual_duration_ratio",
+          appliedCount: hourAllocation.allocationApplied ? 1 : 0,
+          totalCount: 1
+        }
       });
     }
 
