@@ -180,6 +180,8 @@ model OperationAssignment {
   plannedEnd        DateTime                @map("planned_end")
   plannedQuantity   Int                     @map("planned_quantity")
   estimatedHours    Float?                  @map("estimated_hours")
+  actualStartAt     DateTime?               @map("actual_start_at")
+  actualEndAt       DateTime?               @map("actual_end_at")
   canWorkerRemove   Boolean                 @default(false) @map("can_worker_remove")
   claimedAt         DateTime?               @map("claimed_at")
   assignedById      String?                 @map("assigned_by_id")

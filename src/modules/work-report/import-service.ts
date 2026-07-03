@@ -22,13 +22,15 @@ export interface ThirdPartyImportOperation {
   operationNote?: string;
   plannedQuantity?: number;
   dueDate?: string | null;
+  status?: "available" | "closed";
 }
 
-interface NormalizedThirdPartyImportOperation extends Omit<ThirdPartyImportOperation, "dueDate" | "operationNote" | "plannedQuantity"> {
+interface NormalizedThirdPartyImportOperation extends Omit<ThirdPartyImportOperation, "dueDate" | "operationNote" | "plannedQuantity" | "status"> {
   row: number;
   plannedQuantity: number;
   dueDate: Date;
   operationNote: string;
+  status: "available" | "closed";
 }
 
 interface ImportResultItem {
@@ -86,7 +88,8 @@ const normalizeThirdPartyOperations = (operations: ThirdPartyImportOperation[]) 
       row,
       plannedQuantity,
       dueDate,
-      operationNote: item.operationNote ?? ""
+      operationNote: item.operationNote ?? "",
+      status: item.status ?? OPERATION_POOL_STATUS.available
     });
   }
 
@@ -208,7 +211,7 @@ export class WorkReportImportService {
             ${item.plannedQuantity},
             ${item.plannedQuantity},
             ${item.estimatedHours},
-            ${OPERATION_POOL_STATUS.available},
+            ${item.status},
             ${"third_party"},
             ${user.id},
             CURRENT_TIMESTAMP,
@@ -230,6 +233,7 @@ export class WorkReportImportService {
                 planned_quantity = EXCLUDED.planned_quantity,
                 remaining_quantity = EXCLUDED.remaining_quantity,
                 estimated_hours = EXCLUDED.estimated_hours,
+                status = EXCLUDED.status,
                 updated_at = CURRENT_TIMESTAMP
             `;
           }

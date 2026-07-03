@@ -112,6 +112,8 @@ const serializeReportRecord = (assignment: {
   status: string;
   claimedAt: Date | null;
   estimatedHours: number | null;
+  actualStartAt: Date | null;
+  actualEndAt: Date | null;
   session: {
     id: string;
     startedAt: Date | null;
@@ -137,6 +139,8 @@ const serializeReportRecord = (assignment: {
     durationHours,
     startedAt: assignment.session?.startedAt?.toISOString(),
     completedAt: assignment.session?.completedAt?.toISOString(),
+    actualStartAt: assignment.actualStartAt?.toISOString(),
+    actualEndAt: assignment.actualEndAt?.toISOString(),
     photos: []
   };
 };
@@ -366,7 +370,11 @@ export class WorkReportService {
     return operations.sort((a, b) => Number(a.operationNo || 0) - Number(b.operationNo || 0)).map(serializeOperation);
   };
 
-  claimOperation = async (operationId: string, user: AuthenticatedUser) => {
+  claimOperation = async (
+    operationId: string,
+    user: AuthenticatedUser,
+    options?: { startTime?: Date; endTime?: Date }
+  ) => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         const assignment = await this.db.$transaction(async (tx) => {
@@ -427,6 +435,8 @@ export class WorkReportService {
               plannedEnd,
               plannedQuantity: operation.plannedQuantity,
               estimatedHours: operation.estimatedHours,
+              actualStartAt: options?.startTime ?? null,
+              actualEndAt: options?.endTime ?? null,
               canWorkerRemove: true,
               claimedAt: new Date(),
               collaborators: {
@@ -637,6 +647,33 @@ export class WorkReportService {
 
   importThirdPartyOperations = (operations: ThirdPartyImportOperation[], user: AuthenticatedUser) =>
     this.importService.importThirdPartyOperations(operations, user);
+
+  completeOperation = async (orderNo: string, partNo: string, operationNo: string) => {
+    const operation = await this.db.operationPool.findFirst({
+      where: {
+        workOrder: { orderNo },
+        part: { partNo },
+        operationNo
+      },
+      include: { workOrder: true, part: true }
+    });
+
+    if (!operation) {
+      throw new AppError(404, "工序不存在");
+    }
+
+    if (operation.status === OPERATION_POOL_STATUS.closed) {
+      throw new AppError(409, "工序已完工");
+    }
+
+    const updated = await this.db.operationPool.update({
+      where: { id: operation.id },
+      data: { status: OPERATION_POOL_STATUS.closed },
+      include: { workOrder: true, part: true }
+    });
+
+    return serializeOperation(updated);
+  };
 }
 
 export const workReportService = new WorkReportService();

@@ -42,6 +42,8 @@ export const serializeAssignment = (assignment: AssignmentRow) => ({
   source: assignment.source,
   canWorkerRemove: assignment.canWorkerRemove,
   estimatedHours: assignment.estimatedHours ?? undefined,
+  actualStartAt: toDateTime(assignment.actualStartAt),
+  actualEndAt: toDateTime(assignment.actualEndAt),
   claimedAt: toDateTime(assignment.claimedAt),
   assignedBy: assignment.assignedById
     ? {

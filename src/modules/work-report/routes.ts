@@ -35,7 +35,8 @@ const thirdPartyImportOperationSchema = z.object({
   estimatedHours: z.coerce.number().positive(),
   operationNote: z.string().trim().optional(),
   plannedQuantity: z.coerce.number().positive().optional(),
-  dueDate: dateStringSchema.nullable().optional()
+  dueDate: dateStringSchema.nullable().optional(),
+  status: z.enum(["available", "closed"]).optional()
 });
 
 const thirdPartyImportSchema = z.union([
@@ -166,7 +167,24 @@ workReportRouter.get(
 workReportRouter.post(
   "/claim/operations/:operationId/claim",
   asyncHandler(async (req, res) => {
-    res.status(201).json(await workReportService.claimOperation(req.params.operationId, requireUser(req)));
+    const body = z
+      .object({
+        startTime: z.string().trim().optional(),
+        endTime: z.string().trim().optional()
+      })
+      .optional()
+      .parse(req.body);
+    const toTime = (value?: string) => {
+      if (!value) return undefined;
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? undefined : date;
+    };
+    res.status(201).json(
+      await workReportService.claimOperation(req.params.operationId, requireUser(req), {
+        startTime: toTime(body?.startTime),
+        endTime: toTime(body?.endTime)
+      })
+    );
   })
 );
 
@@ -313,6 +331,20 @@ workReportRouter.post(
   asyncHandler(async (req, res) => {
     const operations = parseThirdPartyImportPayload(req.body);
     res.json(await workReportService.importThirdPartyOperations(operations, requireUser(req)));
+  })
+);
+
+workReportRouter.get(
+  "/api/operations/complete",
+  asyncHandler(async (req, res) => {
+    const query = z
+      .object({
+        orderNo: z.string().trim().min(1),
+        partNo: z.string().trim().min(1),
+        operationNo: z.string().trim().min(1)
+      })
+      .parse(req.query);
+    res.json(await workReportService.completeOperation(query.orderNo, query.partNo, query.operationNo));
   })
 );
 
