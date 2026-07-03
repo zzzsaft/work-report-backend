@@ -289,7 +289,7 @@ model WorkOrderPart {
   operationPools    OperationPool[]
   assignments       OperationAssignment[]
 
-  @@unique([workOrderId, partCode])
+  @@unique([workOrderId, partNo])
   @@map("work_order_parts")
   @@schema("work_report")
 }
@@ -317,7 +317,7 @@ model OperationPool {
   part              WorkOrderPart    @relation(fields: [partId], references: [id], onDelete: Cascade)
   assignments       OperationAssignment[]
 
-  @@unique([workOrderId, partId, operationCode])
+  @@unique([workOrderId, partId, operationNo])
   @@index([status])
   @@index([plannedStart])
   @@map("operation_pool")

@@ -138,7 +138,7 @@ export class WorkReportImportService {
           });
           const orderIdByNo = new Map(orders.map((order) => [order.orderNo, order.id]));
 
-          const uniqueParts = lastBy(batch, (item) => `${item.orderNo}\u0000${item.partCode}`);
+          const uniqueParts = lastBy(batch, (item) => `${item.orderNo}\u0000${item.partNo}`);
           const partRows = uniqueParts.flatMap((item) => {
             const workOrderId = orderIdByNo.get(item.orderNo);
             if (!workOrderId) return [];
@@ -163,8 +163,8 @@ export class WorkReportImportService {
                 planned_quantity, completed_quantity, created_at, updated_at
               )
               VALUES ${Prisma.join(partRows)}
-              ON CONFLICT (work_order_id, part_code) DO UPDATE SET
-                part_no = EXCLUDED.part_no,
+              ON CONFLICT (work_order_id, part_no) DO UPDATE SET
+                part_code = EXCLUDED.part_code,
                 part_name = EXCLUDED.part_name,
                 planned_quantity = EXCLUDED.planned_quantity,
                 updated_at = CURRENT_TIMESTAMP
@@ -174,23 +174,23 @@ export class WorkReportImportService {
           const parts = await tx.workOrderPart.findMany({
             where: {
               workOrderId: { in: Array.from(orderIdByNo.values()) },
-              partCode: { in: uniqueParts.map((item) => item.partCode) }
+              partNo: { in: uniqueParts.map((item) => item.partNo) }
             },
-            select: { id: true, workOrderId: true, partCode: true }
+            select: { id: true, workOrderId: true, partNo: true }
           });
-          const partIdByOrderAndCode = new Map(
-            parts.map((part) => [`${part.workOrderId}\u0000${part.partCode}`, part.id])
+          const partIdByOrderAndNo = new Map(
+            parts.map((part) => [`${part.workOrderId}\u0000${part.partNo}`, part.id])
           );
 
           const validOperations = batch.flatMap((item) => {
             const workOrderId = orderIdByNo.get(item.orderNo);
-            const partId = workOrderId ? partIdByOrderAndCode.get(`${workOrderId}\u0000${item.partCode}`) : undefined;
+            const partId = workOrderId ? partIdByOrderAndNo.get(`${workOrderId}\u0000${item.partNo}`) : undefined;
             if (!workOrderId || !partId) return [];
             return [{ item, workOrderId, partId }];
           });
           const uniqueOperations = lastBy(
             validOperations,
-            ({ item, workOrderId, partId }) => `${workOrderId}\u0000${partId}\u0000${item.operationCode}`
+            ({ item, workOrderId, partId }) => `${workOrderId}\u0000${partId}\u0000${item.operationNo}`
           );
 
           const operationRows = uniqueOperations.map(({ item, workOrderId, partId }) => Prisma.sql`(
@@ -219,8 +219,8 @@ export class WorkReportImportService {
                 estimated_hours, status, source, created_by, created_at, updated_at
               )
               VALUES ${Prisma.join(operationRows)}
-              ON CONFLICT (work_order_id, part_id, operation_code) DO UPDATE SET
-                operation_no = EXCLUDED.operation_no,
+              ON CONFLICT (work_order_id, part_id, operation_no) DO UPDATE SET
+                operation_code = EXCLUDED.operation_code,
                 operation_name = EXCLUDED.operation_name,
                 operation_note = EXCLUDED.operation_note,
                 planned_quantity = EXCLUDED.planned_quantity,
@@ -233,7 +233,7 @@ export class WorkReportImportService {
 
           const operationKeyConditions = uniqueOperations.map(
             ({ item, workOrderId, partId }) =>
-              Prisma.sql`(work_order_id = ${workOrderId} AND part_id = ${partId} AND operation_code = ${item.operationCode})`
+              Prisma.sql`(work_order_id = ${workOrderId} AND part_id = ${partId} AND operation_no = ${item.operationNo})`
           );
 
           const importedOperations =
