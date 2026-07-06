@@ -9,10 +9,12 @@ import {
   createWecomContactUser,
   deleteWecomDepartment,
   exchangeWecomCode,
+  getWecomDepartment,
   getWecomAuthClient,
   getWecomJoinQrcode,
   inviteWecomContacts,
   listWecomDepartmentIds,
+  listWecomDepartments,
   listWecomUserDepartmentIds,
   DEFAULT_WECOM_CLIENT_ID,
   isOriginAllowed,
@@ -158,6 +160,28 @@ router.get("/auth/admin/wecom/departments/simplelist", async (req, res, next) =>
     const clientId = normalizeWecomClientId(req.query.clientId ?? DEFAULT_WECOM_CLIENT_ID);
     res.setHeader("Cache-Control", "no-store");
     res.json(await listWecomDepartmentIds(clientId, req.query.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/auth/admin/wecom/departments/list", async (req, res, next) => {
+  try {
+    await requireAdmin(req);
+    const clientId = normalizeWecomClientId(req.query.clientId ?? DEFAULT_WECOM_CLIENT_ID);
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await listWecomDepartments(clientId, req.query.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/auth/admin/wecom/departments/:id", async (req, res, next) => {
+  try {
+    await requireAdmin(req);
+    const clientId = normalizeWecomClientId(req.query.clientId ?? DEFAULT_WECOM_CLIENT_ID);
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await getWecomDepartment(clientId, req.params.id));
   } catch (error) {
     next(error);
   }

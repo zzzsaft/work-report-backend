@@ -362,13 +362,40 @@ DELETE /auth/admin/wecom/departments/:id
 }
 ```
 
+### 获取并同步单个部门详情
+
+```http
+GET /auth/admin/wecom/departments/:id
+```
+
+服务端调用企业微信 `GET /cgi-bin/department/get`，使用当前 `clientId` 配置里的应用 `corpSecret` 获取 access_token，不使用 `WECOM_CONTACT_CORP_SECRET`。成功后会同步 upsert 到本地 `wecom_departments` 表。
+
+前端部门详情页的“刷新”按钮可直接调用该接口；打开编辑弹窗或进入编辑页前，也应先调用该接口拿最新详情，再把返回的 `department` 填入表单，避免使用本地旧数据编辑。
+
+```json
+{
+  "errcode": 0,
+  "errmsg": "ok",
+  "department": {
+    "id": 2,
+    "name": "广州研发中心",
+    "name_en": "RDGZ",
+    "department_leader": ["zhangsan", "lisi"],
+    "parentid": 1,
+    "order": 10
+  }
+}
+```
+
 ### 获取并同步部门 ID 列表
 
 ```http
 GET /auth/admin/wecom/departments/simplelist?id=1
 ```
 
-不传 `id` 时获取全量组织架构；返回结果会同步 upsert 到本地 `wecom_departments` 表。
+不传 `id` 时获取全量组织架构；返回结果会同步 upsert 到本地 `wecom_departments` 表，并逐个调用部门详情接口补齐名称、英文名和负责人。
+
+前端部门列表页的“刷新”按钮应调用该接口。刷新完成后使用响应里的 `departments` 重绘列表，或重新查询本地部门数据。
 
 ```json
 {
@@ -384,6 +411,43 @@ GET /auth/admin/wecom/departments/simplelist?id=1
   "department_id": [
     {
       "id": 2,
+      "parentid": 1,
+      "order": 10
+    }
+  ],
+  "departments": [
+    {
+      "id": 2,
+      "name": "广州研发中心",
+      "name_en": "RDGZ",
+      "department_leader": ["zhangsan", "lisi"],
+      "parentid": 1,
+      "order": 10
+    }
+  ]
+}
+```
+
+### 获取并同步部门列表（旧接口）
+
+```http
+GET /auth/admin/wecom/departments/list?id=1
+```
+
+服务端调用企业微信 `GET /cgi-bin/department/list`，使用当前 `clientId` 配置里的应用 `corpSecret` 获取 access_token，并通过微信 proxy 转发；不使用 `WECOM_CONTACT_CORP_SECRET`。成功后会同步 upsert 到本地 `wecom_departments` 表。
+
+该接口是企业微信性能较低的旧接口，优先使用 `GET /auth/admin/wecom/departments/simplelist` 加单部门详情刷新；仅在需要验证或兼容旧接口时调用。
+
+```json
+{
+  "errcode": 0,
+  "errmsg": "ok",
+  "department": [
+    {
+      "id": 2,
+      "name": "广州研发中心",
+      "name_en": "RDGZ",
+      "department_leader": ["zhangsan", "lisi"],
       "parentid": 1,
       "order": 10
     }

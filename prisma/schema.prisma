@@ -118,6 +118,7 @@ model WecomDepartment {
   departmentId Int                   @map("department_id")
   name         String?
   nameEn       String?               @map("name_en")
+  departmentLeader Json?             @map("department_leader")
   parentId     Int                   @map("parent_id")
   order        BigInt?               @map("order_value")
   createdAt    DateTime              @default(now()) @map("created_at")
