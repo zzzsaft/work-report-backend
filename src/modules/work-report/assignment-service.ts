@@ -6,6 +6,7 @@ import { serializeAssignment } from "./serializers.js";
 import { addHours } from "./date-utils.js";
 
 const CLAIM_CONFLICT_MESSAGE = "该工序领取状态已变化，请重试";
+const RECLAIM_COOLDOWN_MS = 30 * 60 * 1000;
 
 const assignmentInclude = {
   workOrder: true,
@@ -58,9 +59,13 @@ claimOperation = async (
               operationPoolId: operation.id,
               workerId: user.id,
               status: { notIn: [...INACTIVE_ASSIGNMENT_STATUSES] }
-            }
+            },
+            orderBy: [{ claimedAt: "desc" }, { createdAt: "desc" }]
           });
-          if (duplicated) throw new AppError(409, "不能重复领取同一工序");
+          const duplicatedAt = duplicated?.claimedAt ?? duplicated?.createdAt;
+          if (duplicatedAt && Date.now() - duplicatedAt.getTime() < RECLAIM_COOLDOWN_MS) {
+            throw new AppError(409, "半小时内不能重复领取同一工序");
+          }
 
           const nextClaimedWorkers = operation.claimedWorkers + 1;
           const updateResult = await tx.operationPool.updateMany({

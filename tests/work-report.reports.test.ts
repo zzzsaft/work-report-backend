@@ -84,6 +84,7 @@ it("returns paginated report records and treats datetime endTime as an exact bou
     });
 
     const where = {
+      status: { not: "cancelled" },
       workOrder: { orderNo: { contains: "WO", mode: "insensitive" } },
       claimedAt: {
         gte: new Date("2026-07-01T00:00:00"),
@@ -290,18 +291,23 @@ it("summarizes non-cancelled assignments by claimed date first", async () => {
 
   it("supports month statistics", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 5, 25, 10));
+    // 2026-06-25 10:00 local (Beijing) is well inside June so no UTC boundary trick
+    vi.setSystemTime(new Date(Date.UTC(2026, 5, 25, 2))); // 2026-06-25T02:00Z = 2026-06-25T10:00+08:00
 
     const findMany = vi.fn().mockResolvedValue([
       {
+        id: "m1",
+        operationPoolId: "op1",
         estimatedHours: 2,
-        claimedAt: new Date(2026, 5, 1, 9),
-        plannedStart: new Date(2026, 4, 31, 9)
+        claimedAt: new Date(Date.UTC(2026, 5, 1, 1)), // 2026-06-01 09:00 Beijing
+        plannedStart: new Date(Date.UTC(2026, 4, 31, 1))
       },
       {
+        id: "m2",
+        operationPoolId: "op2",
         estimatedHours: 4,
         claimedAt: null,
-        plannedStart: new Date(2026, 5, 30, 9)
+        plannedStart: new Date(Date.UTC(2026, 5, 30, 1)) // 2026-06-30 09:00 Beijing
       }
     ]);
     const db = { operationAssignment: { findMany } };
@@ -316,6 +322,8 @@ it("summarizes non-cancelled assignments by claimed date first", async () => {
       attendanceDays: 2
     });
 
+    // 北京时间 6月 范围: 2026-06-01 00:00+08:00 ~ 2026-07-01 00:00+08:00
+    // 对应 UTC: 2026-05-31 16:00Z ~ 2026-06-30 16:00Z
     expect(findMany).toHaveBeenCalledWith({
       where: {
         workerId: user.id,
@@ -323,15 +331,15 @@ it("summarizes non-cancelled assignments by claimed date first", async () => {
         OR: [
           {
             claimedAt: {
-              gte: new Date(2026, 5, 1),
-              lt: new Date(2026, 6, 1)
+              gte: new Date(Date.UTC(2026, 4, 31, 16)),
+              lt: new Date(Date.UTC(2026, 5, 30, 16))
             }
           },
           {
             claimedAt: null,
             plannedStart: {
-              gte: new Date(2026, 5, 1),
-              lt: new Date(2026, 6, 1)
+              gte: new Date(Date.UTC(2026, 4, 31, 16)),
+              lt: new Date(Date.UTC(2026, 5, 30, 16))
             }
           }
         ]
@@ -347,5 +355,79 @@ it("summarizes non-cancelled assignments by claimed date first", async () => {
         operationPool: { select: { estimatedHours: true } }
       }
     });
+  });
+
+  it("month statistics correctly handles Beijing early morning when UTC is still previous day", async () => {
+    // 核心用例: 用户反馈 2026-08-01 07:37 北京时看本月统计竟然包含 7 月数据
+    // 对应 UTC 为 2026-07-31 23:37，若用本地时区(UTC)会误判月份为 7 月
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 6, 31, 23, 37))); // 2026-07-31T23:37Z = 2026-08-01T07:37+08:00
+
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "aug1",
+        operationPoolId: "op-aug",
+        estimatedHours: 3,
+        claimedAt: new Date(Date.UTC(2026, 6, 31, 23, 0)) // 2026-08-01 07:00 Beijing (本月)
+      }
+    ]);
+    const db = { operationAssignment: { findMany } };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.getStatistics("month", user)).resolves.toMatchObject({
+      period: "month",
+      totalHours: 3,
+      attendanceDays: 1
+    });
+
+    // 期望区间为北京时间 8 月: 2026-08-01 00:00+08:00 ~ 2026-09-01 00:00+08:00
+    // 即 UTC: 2026-07-31 16:00Z ~ 2026-08-31 16:00Z
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        OR: [
+          {
+            claimedAt: {
+              gte: new Date(Date.UTC(2026, 6, 31, 16)),
+              lt: new Date(Date.UTC(2026, 7, 31, 16))
+            }
+          },
+          {
+            claimedAt: null,
+            plannedStart: {
+              gte: new Date(Date.UTC(2026, 6, 31, 16)),
+              lt: new Date(Date.UTC(2026, 7, 31, 16))
+            }
+          }
+        ]
+      })
+    }));
+  });
+
+  it("month statistics excludes data from last Beijing day of previous month", async () => {
+    // 2026-08-01 07:37 Beijing 访问时，7月31日 18:00 Beijing 的数据不应计入"本月"
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 6, 31, 23, 37))); // 2026-08-01T07:37+08:00
+
+    const julyClaim = new Date(Date.UTC(2026, 6, 31, 10, 0)); // 2026-07-31 18:00 Beijing (7月)
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "jul",
+        operationPoolId: "op-jul",
+        estimatedHours: 8,
+        claimedAt: julyClaim
+      }
+    ]);
+    const db = { operationAssignment: { findMany } };
+    const service = new WorkReportService(db as never);
+
+    const findManyArgs = findMany.mock.calls;
+    const { OR } = (await (async () => {
+      await service.getStatistics("month", user);
+      return findMany.mock.calls[0][0].where as { OR: Array<{ claimedAt: { gte: Date; lt: Date } }> };
+    })())!;
+
+    const range = OR[0].claimedAt;
+    // 7 月 31 日 18:00 Beijing 的记录 < 8 月范围的起点, 不应被计入
+    expect(julyClaim.getTime() < range.gte.getTime() || julyClaim.getTime() >= range.lt.getTime()).toBe(true);
   });
 });

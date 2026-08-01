@@ -51,7 +51,12 @@ export const fetchWecomJson = async <T>(
   query: Record<string, unknown> = {},
   payload: Record<string, unknown> = {}
 ): Promise<T> => {
-  const proxyData = await fetchWechatProxyJson<T>(method, pathName, query, payload);
+  let proxyData: T | null = null;
+  try {
+    proxyData = await fetchWechatProxyJson<T>(method, pathName, query, payload);
+  } catch {
+    proxyData = null;
+  }
   if (proxyData) return proxyData;
 
   const url = wecomUrl(pathName);

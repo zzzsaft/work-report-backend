@@ -154,7 +154,8 @@ it("clamps claimable product pagination and preserves total when page is out of 
     );
   });
 
-  it("rejects duplicate claims", async () => {
+  it("rejects duplicate claims within 30 minutes", async () => {
+    vi.setSystemTime(new Date("2026-06-25T09:00:00+08:00"));
     const tx = createTx();
     tx.operationPool.findUnique.mockResolvedValue({
       id: "op-1",
@@ -164,16 +165,68 @@ it("clamps claimable product pagination and preserves total when page is out of 
       claimedWorkers: 0,
       maxClaimWorkers: 2
     });
-    tx.operationAssignment.findFirst.mockResolvedValue({ id: "assignment-1" });
+    tx.operationAssignment.findFirst.mockResolvedValue({ id: "assignment-1", claimedAt: new Date("2026-06-25T08:45:00+08:00"), createdAt: new Date("2026-06-25T08:45:00+08:00") });
 
     const db = { $transaction: vi.fn((handler) => handler(tx)) };
     const service = new WorkReportService(db as never);
 
     await expect(service.claimOperation("op-1", user)).rejects.toMatchObject(
-      new AppError(409, "不能重复领取同一工序")
+      new AppError(409, "半小时内不能重复领取同一工序")
     );
   });
 
+  it("claims the same operation again after 30 minutes", async () => {
+    vi.setSystemTime(new Date("2026-06-25T09:20:00+08:00"));
+    const tx = createTx();
+    tx.operationPool.findUnique.mockResolvedValue({
+      id: "op-1",
+      workOrderId: "order-1",
+      partId: "part-1",
+      status: "available",
+      claimedWorkers: 1,
+      maxClaimWorkers: 3,
+      plannedStart: new Date("2026-06-25T09:00:00+08:00"),
+      estimatedHours: 1,
+      plannedQuantity: 10
+    });
+    tx.operationAssignment.findFirst.mockResolvedValue({
+      id: "assignment-old",
+      claimedAt: new Date("2026-06-25T08:49:00+08:00"),
+      createdAt: new Date("2026-06-25T08:49:00+08:00")
+    });
+    tx.operationPool.updateMany.mockResolvedValue({ count: 1 });
+    tx.operationAssignment.create.mockResolvedValue({ id: "assignment-new" });
+    tx.operationAssignment.findUniqueOrThrow.mockResolvedValue({
+      id: "assignment-new",
+      operationPoolId: "op-1",
+      workOrderId: "order-1",
+      partId: "part-1",
+      workerId: user.id,
+      workerName: user.name,
+      source: "self_claimed",
+      status: "assigned",
+      plannedStart: new Date("2026-06-25T09:00:00+08:00"),
+      plannedEnd: new Date("2026-06-25T10:00:00+08:00"),
+      plannedQuantity: 10,
+      estimatedHours: 1,
+      canWorkerRemove: true,
+      claimedAt: new Date("2026-06-25T09:20:00+08:00"),
+      assignedById: null,
+      assignedByName: null,
+      assignedByRole: null,
+      workOrder: { id: "order-1", orderNo: "WO-1", productCode: "PRD-1", productName: "产品" },
+      part: { id: "part-1", partCode: "P-1", partName: "零件" },
+      operationPool: { id: "op-1", operationCode: "OP-010", operationName: "粗加工", operationNote: "" },
+      collaborators: [],
+      session: null,
+      assignedBy: null
+    });
+
+    const db = { $transaction: vi.fn((handler) => handler(tx)) };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.claimOperation("op-1", user)).resolves.toMatchObject({ id: "assignment-new" });
+  });
   it("claims operations with a guarded worker-count update", async () => {
     const tx = createTx();
     tx.operationPool.findUnique.mockResolvedValue({

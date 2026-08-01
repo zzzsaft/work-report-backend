@@ -4,7 +4,7 @@ import { AppError } from "../../lib/errors.js";
 import { uniqueValues } from "../../lib/arrays.js";
 import { ASSIGNMENT_STATUS } from "./constants.js";
 import { calculateHourAllocations, defaultHourAllocation } from "./hour-allocation.js";
-import { getDateKey, getPeriodRange } from "./date-utils.js";
+import { getDateKeyAsiaShanghai, getPeriodRangeAsiaShanghai } from "./date-utils.js";
 
 export class WorkReportStatisticsService {
   constructor(private readonly db: PrismaClient) {}
@@ -14,7 +14,7 @@ getStatistics = async (period: string, user: AuthenticatedUser) => {
       throw new AppError(400, "period 必须是 day、week 或 month");
     }
 
-    const { start, end } = getPeriodRange(period);
+    const { start, end } = getPeriodRangeAsiaShanghai(period);
     const assignments = await this.db.operationAssignment.findMany({
       where: {
         workerId: user.id,
@@ -69,7 +69,7 @@ getStatistics = async (period: string, user: AuthenticatedUser) => {
       ...(allocations.get(item.id) ?? defaultHourAllocation(item))
     }));
     const attendanceDays = new Set(
-      assignments.map((item) => getDateKey(item.claimedAt ?? item.plannedStart))
+      assignments.map((item) => getDateKeyAsiaShanghai(item.claimedAt ?? item.plannedStart))
     ).size;
 
     return {

@@ -23,7 +23,7 @@ getReports = async (filters: {
     page?: number;
     pageSize?: number;
   } = {}) => {
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { status: { not: ASSIGNMENT_STATUS.cancelled } };
     const safePage = Math.max(filters.page ?? 1, 1);
     const safePageSize = Math.min(Math.max(filters.pageSize ?? 50, 1), MAX_REPORTS_PAGE_SIZE);
 
