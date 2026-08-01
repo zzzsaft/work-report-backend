@@ -16,7 +16,7 @@ it("returns paginated report records and treats datetime endTime as an exact bou
         id: "assignment-1",
         operationPoolId: "operation-1",
         workOrder: { orderNo: "WO-001", productName: "产品A" },
-        part: { partCode: "P-001", partName: "零件A" },
+        part: { partNo: "01", partCode: "P-001", partName: "零件A" },
         operationPool: { operationCode: "OP-001", operationName: "粗加工", estimatedHours: 2, operationNote: "切削后去毛刺并测量尺寸。" },
         workerName: "张师傅",
         status: "completed",
@@ -49,6 +49,7 @@ it("returns paginated report records and treats datetime endTime as an exact bou
           id: "assignment-1",
           orderNo: "WO-001",
           productName: "产品A",
+          partNo: "01",
           partCode: "P-001",
           partName: "零件A",
           operationCode: "OP-001",
@@ -405,5 +406,53 @@ it("summarizes non-cancelled assignments by completion date", async () => {
 
     // 7 月 31 日 18:00 Beijing 的完工时间 < 8 月范围起点, 不应被计入
     expect(julyCompletion.getTime() < where.actualEndAt.gte.getTime() || julyCompletion.getTime() >= where.actualEndAt.lt.getTime()).toBe(true);
+  });
+
+  it("supports lastMonth statistics", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 6, 15, 2))); // 2026-07-15T10:00+08:00
+
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "lm1",
+        operationPoolId: "op1",
+        estimatedHours: 3,
+        actualEndAt: new Date(Date.UTC(2026, 5, 20, 1)), // 2026-06-20 09:00 Beijing
+        claimedAt: new Date(Date.UTC(2026, 5, 20, 1))
+      },
+      {
+        id: "lm2",
+        operationPoolId: "op2",
+        estimatedHours: 4,
+        actualEndAt: new Date(Date.UTC(2026, 5, 30, 6)), // 2026-06-30 14:00 Beijing
+        claimedAt: new Date(Date.UTC(2026, 5, 30, 6))
+      }
+    ]);
+    const db = { operationAssignment: { findMany } };
+    const service = new WorkReportService(db as never);
+
+    await expect(service.getStatistics("lastMonth", user)).resolves.toMatchObject({
+      period: "lastMonth",
+      totalHours: 7,
+      regularHours: 7,
+      overtimeHours: 0,
+      completedOperations: 2,
+      attendanceDays: 2
+    });
+
+    // 上月范围: 2026-06-01 00:00+08:00 ~ 2026-07-01 00:00+08:00
+    // 对应 UTC: 2026-05-31 16:00Z ~ 2026-06-30 16:00Z
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        workerId: user.id,
+        status: { not: "cancelled" },
+        actualEndAt: {
+          gte: new Date(Date.UTC(2026, 4, 31, 16)),
+          lt: new Date(Date.UTC(2026, 5, 30, 16)),
+          not: null
+        }
+      },
+      select: expect.any(Object)
+    });
   });
 });

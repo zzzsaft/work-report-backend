@@ -54,6 +54,10 @@ export class WorkReportService {
 
   getStatistics = (period: string, user: AuthenticatedUser) => this.statistics.getStatistics(period, user);
 
+  getMyReports = (period: string, user: AuthenticatedUser) => this.statistics.getMyReports(period, user);
+
+  getStaffStats = (period: string) => this.statistics.getStaffStats(period);
+
   getOrders = (page = 1, pageSize = 50) => this.admin.getOrders(page, pageSize);
 
   searchWorkers = (keyword = "", page = 1, pageSize = 20) => this.admin.searchWorkers(keyword, page, pageSize);

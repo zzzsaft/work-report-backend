@@ -30,7 +30,7 @@ export const serializeReportRecord = (assignment: {
   id: string;
   operationPoolId: string;
   workOrder: { orderNo: string; productName: string };
-  part: { partCode: string; partName: string };
+  part: { partNo: string | null; partCode: string; partName: string };
   operationPool: { operationCode: string; operationName: string; estimatedHours: number; operationNote: string };
   workerName: string;
   status: string;
@@ -53,6 +53,7 @@ export const serializeReportRecord = (assignment: {
     id: assignment.id,
     orderNo: assignment.workOrder.orderNo,
     productName: assignment.workOrder.productName,
+    partNo: assignment.part.partNo ?? "",
     partCode: assignment.part.partCode,
     partName: assignment.part.partName,
     operationCode: assignment.operationPool.operationCode,

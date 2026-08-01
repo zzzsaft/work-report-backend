@@ -240,6 +240,23 @@ workReportRouter.get(
 );
 
 workReportRouter.get(
+  "/reports/me",
+  asyncHandler(async (req, res) => {
+    const query = z.object({ period: z.string().default("week") }).parse(req.query);
+    res.json(await workReportService.getMyReports(query.period, requireUser(req)));
+  })
+);
+
+workReportRouter.get(
+  "/admin/staff-stats",
+  requireCapability("canViewAdmin"),
+  asyncHandler(async (req, res) => {
+    const query = z.object({ period: z.string().default("month") }).parse(req.query);
+    res.json(await workReportService.getStaffStats(query.period));
+  })
+);
+
+workReportRouter.get(
   "/attendance/me",
   asyncHandler(async () => {
     notImplemented();

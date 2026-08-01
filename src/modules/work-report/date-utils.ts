@@ -20,6 +20,12 @@ export const getPeriodRange = (period: string, now = new Date()) => {
     return { start, end: addDays(start, 7) };
   }
 
+  if (period === "lastMonth") {
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const end = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { start, end };
+  }
+
   const start = new Date(today.getFullYear(), today.getMonth(), 1);
   const end = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   return { start, end };
@@ -119,6 +125,13 @@ export const getPeriodRangeAsiaShanghai = (period: string, now = new Date()) => 
 
   const monthStart = shanghaiDate(todayParts.year, todayParts.month, 1);
   const monthEnd = shanghaiDate(todayParts.year, todayParts.month + 1, 1);
+
+  if (period === "lastMonth") {
+    const lastMonthStart = shanghaiDate(todayParts.year, todayParts.month - 1, 1);
+    const lastMonthEnd = shanghaiDate(todayParts.year, todayParts.month, 1);
+    return { start: lastMonthStart, end: lastMonthEnd };
+  }
+
   return { start: monthStart, end: monthEnd };
 };
 

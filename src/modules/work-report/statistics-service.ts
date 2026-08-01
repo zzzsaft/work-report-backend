@@ -5,13 +5,14 @@ import { uniqueValues } from "../../lib/arrays.js";
 import { ASSIGNMENT_STATUS } from "./constants.js";
 import { calculateHourAllocations, defaultHourAllocation } from "./hour-allocation.js";
 import { getDateKeyAsiaShanghai, getPeriodRangeAsiaShanghai } from "./date-utils.js";
+import { serializeReportRecord } from "./report-serializers.js";
 
 export class WorkReportStatisticsService {
   constructor(private readonly db: PrismaClient) {}
 
 getStatistics = async (period: string, user: AuthenticatedUser) => {
-    if (!["day", "week", "month"].includes(period)) {
-      throw new AppError(400, "period 必须是 day、week 或 month");
+    if (!["day", "week", "month", "lastMonth"].includes(period)) {
+      throw new AppError(400, "period 必须是 day、week、month 或 lastMonth");
     }
 
     const { start, end } = getPeriodRangeAsiaShanghai(period);
@@ -88,5 +89,131 @@ getStatistics = async (period: string, user: AuthenticatedUser) => {
       },
       trend: []
     };
+  };
+
+  getMyReports = async (period: string, user: AuthenticatedUser) => {
+    if (!["day", "week", "month", "lastMonth"].includes(period)) {
+      throw new AppError(400, "period 必须是 day、week、month 或 lastMonth");
+    }
+
+    const { start, end } = getPeriodRangeAsiaShanghai(period);
+    const assignments = await this.db.operationAssignment.findMany({
+      where: {
+        workerId: user.id,
+        status: { not: ASSIGNMENT_STATUS.cancelled },
+        actualEndAt: { gte: start, lt: end, not: null }
+      },
+      include: {
+        workOrder: { select: { orderNo: true, productName: true } },
+        part: { select: { partNo: true, partCode: true, partName: true } },
+        operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true, operationNote: true } },
+        session: {
+          select: { id: true, startedAt: true, completedAt: true, accumulatedSeconds: true }
+        }
+      },
+      orderBy: [{ actualEndAt: "desc" }, { id: "desc" }]
+    });
+
+    const operationPoolIds = uniqueValues(
+      assignments
+        .map((assignment) => assignment.operationPoolId)
+        .filter((operationPoolId): operationPoolId is string => typeof operationPoolId === "string")
+    );
+    const allocationParticipants = operationPoolIds.length
+      ? await this.db.operationAssignment.findMany({
+          where: {
+            operationPoolId: { in: operationPoolIds },
+            status: { not: ASSIGNMENT_STATUS.cancelled }
+          },
+          select: {
+            id: true,
+            operationPoolId: true,
+            estimatedHours: true,
+            actualStartAt: true,
+            actualEndAt: true,
+            operationPool: { select: { estimatedHours: true } }
+          }
+        })
+      : [];
+    const allocations = calculateHourAllocations(allocationParticipants);
+
+    return assignments.map((assignment) => serializeReportRecord(assignment, allocations.get(assignment.id)));
+  };
+
+  getStaffStats = async (period: string) => {
+    if (!["month", "lastMonth"].includes(period)) {
+      throw new AppError(400, "period 必须是 month 或 lastMonth");
+    }
+
+    const { start, end } = getPeriodRangeAsiaShanghai(period);
+    const assignments = await this.db.operationAssignment.findMany({
+      where: {
+        status: { not: ASSIGNMENT_STATUS.cancelled },
+        actualEndAt: { gte: start, lt: end, not: null }
+      },
+      select: {
+        id: true,
+        workerId: true,
+        workerName: true,
+        operationPoolId: true,
+        estimatedHours: true,
+        actualStartAt: true,
+        actualEndAt: true,
+        operationPool: { select: { estimatedHours: true } }
+      }
+    });
+
+    if (!assignments.length) return [];
+
+    const operationPoolIds = uniqueValues(
+      assignments
+        .map((assignment) => assignment.operationPoolId)
+        .filter((operationPoolId): operationPoolId is string => typeof operationPoolId === "string")
+    );
+    const allocationParticipants = operationPoolIds.length
+      ? await this.db.operationAssignment.findMany({
+          where: {
+            operationPoolId: { in: operationPoolIds },
+            status: { not: ASSIGNMENT_STATUS.cancelled }
+          },
+          select: {
+            id: true,
+            operationPoolId: true,
+            estimatedHours: true,
+            actualStartAt: true,
+            actualEndAt: true,
+            operationPool: { select: { estimatedHours: true } }
+          }
+        })
+      : [];
+    const allocations = calculateHourAllocations(allocationParticipants);
+
+    const byWorker = new Map<string, { name: string; totalHours: number; completedOperations: number; attendanceDates: Set<string> }>();
+    for (const item of assignments) {
+      const key = item.workerId;
+      const allocated = allocations.get(item.id) ?? defaultHourAllocation(item);
+      const dateKey = item.actualEndAt ? getDateKeyAsiaShanghai(item.actualEndAt) : "";
+      const existing = byWorker.get(key);
+      if (existing) {
+        existing.totalHours += allocated.allocatedHours;
+        existing.completedOperations += 1;
+        if (dateKey) existing.attendanceDates.add(dateKey);
+      } else {
+        byWorker.set(key, {
+          name: item.workerName,
+          totalHours: allocated.allocatedHours,
+          completedOperations: 1,
+          attendanceDates: new Set(dateKey ? [dateKey] : [])
+        });
+      }
+    }
+
+    return Array.from(byWorker.entries()).map(([workerId, data]) => ({
+      workerId,
+      workerName: data.name,
+      totalHours: Number(data.totalHours.toFixed(2)),
+      completedOperations: data.completedOperations,
+      attendanceDays: data.attendanceDates.size
+    })).sort((a, b) => b.totalHours - a.totalHours);
   };
 }
