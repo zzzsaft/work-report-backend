@@ -17,7 +17,7 @@ it("returns paginated report records and treats datetime endTime as an exact bou
         operationPoolId: "operation-1",
         workOrder: { orderNo: "WO-001", productName: "产品A" },
         part: { partCode: "P-001", partName: "零件A" },
-        operationPool: { operationCode: "OP-001", operationName: "粗加工", estimatedHours: 2 },
+        operationPool: { operationCode: "OP-001", operationName: "粗加工", estimatedHours: 2, operationNote: "切削后去毛刺并测量尺寸。" },
         workerName: "张师傅",
         status: "completed",
         claimedAt: new Date("2026-07-01T01:00:00.000Z"),
@@ -53,6 +53,7 @@ it("returns paginated report records and treats datetime endTime as an exact bou
           partName: "零件A",
           operationCode: "OP-001",
           operationName: "粗加工",
+          operationNote: "切削后去毛刺并测量尺寸。",
           operatorName: "张师傅",
           status: "completed",
           claimedAt: "2026-07-01T01:00:00.000Z",
@@ -101,25 +102,34 @@ it("returns paginated report records and treats datetime endTime as an exact bou
     );
   });
 
-it("summarizes non-cancelled assignments by claimed date first", async () => {
+it("summarizes non-cancelled assignments by completion date", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 5, 25, 10));
+    vi.setSystemTime(new Date(Date.UTC(2026, 5, 25, 2))); // 2026-06-25T10:00+08:00
 
     const findMany = vi.fn().mockResolvedValue([
       {
+        id: "a1",
+        operationPoolId: "op1",
         estimatedHours: 2.5,
-        claimedAt: new Date(2026, 5, 22, 9),
-        plannedStart: new Date(2026, 5, 21, 9)
+        actualEndAt: new Date(Date.UTC(2026, 5, 22, 1)), // 2026-06-22 09:00 Beijing
+        claimedAt: new Date(Date.UTC(2026, 5, 22, 1)),
+        plannedStart: new Date(Date.UTC(2026, 5, 21, 1))
       },
       {
+        id: "a2",
+        operationPoolId: "op2",
         estimatedHours: 3,
+        actualEndAt: new Date(Date.UTC(2026, 5, 23, 1)), // 2026-06-23 09:00 Beijing
         claimedAt: null,
-        plannedStart: new Date(2026, 5, 23, 9)
+        plannedStart: new Date(Date.UTC(2026, 5, 23, 1))
       },
       {
+        id: "a3",
+        operationPoolId: "op3",
         estimatedHours: null,
-        claimedAt: new Date(2026, 5, 22, 14),
-        plannedStart: new Date(2026, 5, 24, 9)
+        actualEndAt: new Date(Date.UTC(2026, 5, 22, 6)), // 2026-06-22 14:00 Beijing
+        claimedAt: new Date(Date.UTC(2026, 5, 22, 6)),
+        plannedStart: new Date(Date.UTC(2026, 5, 24, 1))
       }
     ]);
     const db = { operationAssignment: { findMany } };
@@ -134,25 +144,17 @@ it("summarizes non-cancelled assignments by claimed date first", async () => {
       attendanceDays: 2
     });
 
+    // 北京时间本周: 2026-06-22 00:00+08:00 ~ 2026-06-29 00:00+08:00
+    // 对应 UTC: 2026-06-21 16:00Z ~ 2026-06-28 16:00Z
     expect(findMany).toHaveBeenCalledWith({
       where: {
         workerId: user.id,
         status: { not: "cancelled" },
-        OR: [
-          {
-            claimedAt: {
-              gte: new Date(2026, 5, 22),
-              lt: new Date(2026, 5, 29)
-            }
-          },
-          {
-            claimedAt: null,
-            plannedStart: {
-              gte: new Date(2026, 5, 22),
-              lt: new Date(2026, 5, 29)
-            }
-          }
-        ]
+        actualEndAt: {
+          gte: new Date(Date.UTC(2026, 5, 21, 16)),
+          lt: new Date(Date.UTC(2026, 5, 28, 16)),
+          not: null
+        }
       },
       select: {
         id: true,
@@ -169,13 +171,16 @@ it("summarizes non-cancelled assignments by claimed date first", async () => {
 
   it("supports day statistics", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 5, 25, 10));
+    vi.setSystemTime(new Date(Date.UTC(2026, 5, 25, 2))); // 2026-06-25T10:00+08:00
 
     const findMany = vi.fn().mockResolvedValue([
       {
+        id: "d1",
+        operationPoolId: "op1",
         estimatedHours: 1.25,
-        claimedAt: new Date(2026, 5, 25, 9),
-        plannedStart: new Date(2026, 5, 24, 9)
+        actualEndAt: new Date(Date.UTC(2026, 5, 25, 1)), // 2026-06-25 09:00 Beijing
+        claimedAt: new Date(Date.UTC(2026, 5, 25, 1)),
+        plannedStart: new Date(Date.UTC(2026, 5, 24, 1))
       }
     ]);
     const db = { operationAssignment: { findMany } };
@@ -190,25 +195,17 @@ it("summarizes non-cancelled assignments by claimed date first", async () => {
       attendanceDays: 1
     });
 
+    // 北京时间今日: 2026-06-25 00:00+08:00 ~ 2026-06-26 00:00+08:00
+    // 对应 UTC: 2026-06-24 16:00Z ~ 2026-06-25 16:00Z
     expect(findMany).toHaveBeenCalledWith({
       where: {
         workerId: user.id,
         status: { not: "cancelled" },
-        OR: [
-          {
-            claimedAt: {
-              gte: new Date(2026, 5, 25),
-              lt: new Date(2026, 5, 26)
-            }
-          },
-          {
-            claimedAt: null,
-            plannedStart: {
-              gte: new Date(2026, 5, 25),
-              lt: new Date(2026, 5, 26)
-            }
-          }
-        ]
+        actualEndAt: {
+          gte: new Date(Date.UTC(2026, 5, 24, 16)),
+          lt: new Date(Date.UTC(2026, 5, 25, 16)),
+          not: null
+        }
       },
       select: {
         id: true,
@@ -225,24 +222,24 @@ it("summarizes non-cancelled assignments by claimed date first", async () => {
 
   it("allocates one operation's standard hours by actual duration ratio", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 5, 25, 10));
+    vi.setSystemTime(new Date(Date.UTC(2026, 5, 25, 2))); // 2026-06-25T10:00+08:00
 
     const userAssignment = {
       id: "assignment-1",
       operationPoolId: "operation-1",
       estimatedHours: 10,
-      actualStartAt: new Date(2026, 5, 25, 8),
-      actualEndAt: new Date(2026, 5, 25, 9),
-      claimedAt: new Date(2026, 5, 25, 8),
-      plannedStart: new Date(2026, 5, 25, 8),
+      actualStartAt: new Date(Date.UTC(2026, 5, 25, 0)), // Beijing 08:00
+      actualEndAt: new Date(Date.UTC(2026, 5, 25, 1)),   // Beijing 09:00
+      claimedAt: new Date(Date.UTC(2026, 5, 25, 0)),
+      plannedStart: new Date(Date.UTC(2026, 5, 25, 0)),
       operationPool: { estimatedHours: 10 }
     };
     const coworkerAssignment = {
       id: "assignment-2",
       operationPoolId: "operation-1",
       estimatedHours: 10,
-      actualStartAt: new Date(2026, 5, 25, 8),
-      actualEndAt: new Date(2026, 5, 25, 11),
+      actualStartAt: new Date(Date.UTC(2026, 5, 25, 0)), // Beijing 08:00
+      actualEndAt: new Date(Date.UTC(2026, 5, 25, 3)),   // Beijing 11:00
       operationPool: { estimatedHours: 10 }
     };
     const findMany = vi
@@ -291,23 +288,24 @@ it("summarizes non-cancelled assignments by claimed date first", async () => {
 
   it("supports month statistics", async () => {
     vi.useFakeTimers();
-    // 2026-06-25 10:00 local (Beijing) is well inside June so no UTC boundary trick
-    vi.setSystemTime(new Date(Date.UTC(2026, 5, 25, 2))); // 2026-06-25T02:00Z = 2026-06-25T10:00+08:00
+    vi.setSystemTime(new Date(Date.UTC(2026, 5, 25, 2))); // 2026-06-25T10:00+08:00
 
     const findMany = vi.fn().mockResolvedValue([
       {
         id: "m1",
         operationPoolId: "op1",
         estimatedHours: 2,
-        claimedAt: new Date(Date.UTC(2026, 5, 1, 1)), // 2026-06-01 09:00 Beijing
+        actualEndAt: new Date(Date.UTC(2026, 5, 1, 1)),  // 2026-06-01 09:00 Beijing
+        claimedAt: new Date(Date.UTC(2026, 5, 1, 1)),
         plannedStart: new Date(Date.UTC(2026, 4, 31, 1))
       },
       {
         id: "m2",
         operationPoolId: "op2",
         estimatedHours: 4,
+        actualEndAt: new Date(Date.UTC(2026, 5, 30, 1)), // 2026-06-30 09:00 Beijing
         claimedAt: null,
-        plannedStart: new Date(Date.UTC(2026, 5, 30, 1)) // 2026-06-30 09:00 Beijing
+        plannedStart: new Date(Date.UTC(2026, 5, 30, 1))
       }
     ]);
     const db = { operationAssignment: { findMany } };
@@ -328,21 +326,11 @@ it("summarizes non-cancelled assignments by claimed date first", async () => {
       where: {
         workerId: user.id,
         status: { not: "cancelled" },
-        OR: [
-          {
-            claimedAt: {
-              gte: new Date(Date.UTC(2026, 4, 31, 16)),
-              lt: new Date(Date.UTC(2026, 5, 30, 16))
-            }
-          },
-          {
-            claimedAt: null,
-            plannedStart: {
-              gte: new Date(Date.UTC(2026, 4, 31, 16)),
-              lt: new Date(Date.UTC(2026, 5, 30, 16))
-            }
-          }
-        ]
+        actualEndAt: {
+          gte: new Date(Date.UTC(2026, 4, 31, 16)),
+          lt: new Date(Date.UTC(2026, 5, 30, 16)),
+          not: null
+        }
       },
       select: {
         id: true,
@@ -358,17 +346,18 @@ it("summarizes non-cancelled assignments by claimed date first", async () => {
   });
 
   it("month statistics correctly handles Beijing early morning when UTC is still previous day", async () => {
-    // 核心用例: 用户反馈 2026-08-01 07:37 北京时看本月统计竟然包含 7 月数据
-    // 对应 UTC 为 2026-07-31 23:37，若用本地时区(UTC)会误判月份为 7 月
+    // 核心用例: 2026-08-01 07:37 北京时看本月统计
+    // 对应 UTC 为 2026-07-31 23:37
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(Date.UTC(2026, 6, 31, 23, 37))); // 2026-07-31T23:37Z = 2026-08-01T07:37+08:00
+    vi.setSystemTime(new Date(Date.UTC(2026, 6, 31, 23, 37))); // 2026-08-01T07:37+08:00
 
     const findMany = vi.fn().mockResolvedValue([
       {
         id: "aug1",
         operationPoolId: "op-aug",
         estimatedHours: 3,
-        claimedAt: new Date(Date.UTC(2026, 6, 31, 23, 0)) // 2026-08-01 07:00 Beijing (本月)
+        actualEndAt: new Date(Date.UTC(2026, 6, 31, 23, 0)), // 2026-08-01 07:00 Beijing (本月)
+        claimedAt: new Date(Date.UTC(2026, 6, 31, 23, 0))
       }
     ]);
     const db = { operationAssignment: { findMany } };
@@ -384,50 +373,37 @@ it("summarizes non-cancelled assignments by claimed date first", async () => {
     // 即 UTC: 2026-07-31 16:00Z ~ 2026-08-31 16:00Z
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
-        OR: [
-          {
-            claimedAt: {
-              gte: new Date(Date.UTC(2026, 6, 31, 16)),
-              lt: new Date(Date.UTC(2026, 7, 31, 16))
-            }
-          },
-          {
-            claimedAt: null,
-            plannedStart: {
-              gte: new Date(Date.UTC(2026, 6, 31, 16)),
-              lt: new Date(Date.UTC(2026, 7, 31, 16))
-            }
-          }
-        ]
+        actualEndAt: {
+          gte: new Date(Date.UTC(2026, 6, 31, 16)),
+          lt: new Date(Date.UTC(2026, 7, 31, 16)),
+          not: null
+        }
       })
     }));
   });
 
   it("month statistics excludes data from last Beijing day of previous month", async () => {
-    // 2026-08-01 07:37 Beijing 访问时，7月31日 18:00 Beijing 的数据不应计入"本月"
+    // 2026-08-01 07:37 Beijing 访问时，7月31日 18:00 Beijing 完工的数据不应计入"本月"
     vi.useFakeTimers();
     vi.setSystemTime(new Date(Date.UTC(2026, 6, 31, 23, 37))); // 2026-08-01T07:37+08:00
 
-    const julyClaim = new Date(Date.UTC(2026, 6, 31, 10, 0)); // 2026-07-31 18:00 Beijing (7月)
+    const julyCompletion = new Date(Date.UTC(2026, 6, 31, 10, 0)); // 2026-07-31 18:00 Beijing (7月)
     const findMany = vi.fn().mockResolvedValue([
       {
         id: "jul",
         operationPoolId: "op-jul",
         estimatedHours: 8,
-        claimedAt: julyClaim
+        actualEndAt: julyCompletion,
+        claimedAt: julyCompletion
       }
     ]);
     const db = { operationAssignment: { findMany } };
     const service = new WorkReportService(db as never);
 
-    const findManyArgs = findMany.mock.calls;
-    const { OR } = (await (async () => {
-      await service.getStatistics("month", user);
-      return findMany.mock.calls[0][0].where as { OR: Array<{ claimedAt: { gte: Date; lt: Date } }> };
-    })())!;
+    await service.getStatistics("month", user);
+    const where = findMany.mock.calls[0][0].where as { actualEndAt: { gte: Date; lt: Date } };
 
-    const range = OR[0].claimedAt;
-    // 7 月 31 日 18:00 Beijing 的记录 < 8 月范围的起点, 不应被计入
-    expect(julyClaim.getTime() < range.gte.getTime() || julyClaim.getTime() >= range.lt.getTime()).toBe(true);
+    // 7 月 31 日 18:00 Beijing 的完工时间 < 8 月范围起点, 不应被计入
+    expect(julyCompletion.getTime() < where.actualEndAt.gte.getTime() || julyCompletion.getTime() >= where.actualEndAt.lt.getTime()).toBe(true);
   });
 });

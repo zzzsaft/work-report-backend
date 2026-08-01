@@ -31,7 +31,7 @@ export const serializeReportRecord = (assignment: {
   operationPoolId: string;
   workOrder: { orderNo: string; productName: string };
   part: { partCode: string; partName: string };
-  operationPool: { operationCode: string; operationName: string; estimatedHours: number };
+  operationPool: { operationCode: string; operationName: string; estimatedHours: number; operationNote: string };
   workerName: string;
   status: string;
   claimedAt: Date | null;
@@ -57,6 +57,7 @@ export const serializeReportRecord = (assignment: {
     partName: assignment.part.partName,
     operationCode: assignment.operationPool.operationCode,
     operationName: assignment.operationPool.operationName,
+    operationNote: assignment.operationPool.operationNote,
     operatorName: assignment.workerName,
     status: assignment.status,
     claimedAt: assignment.claimedAt?.toISOString(),

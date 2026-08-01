@@ -19,10 +19,7 @@ getStatistics = async (period: string, user: AuthenticatedUser) => {
       where: {
         workerId: user.id,
         status: { not: ASSIGNMENT_STATUS.cancelled },
-        OR: [
-          { claimedAt: { gte: start, lt: end } },
-          { claimedAt: null, plannedStart: { gte: start, lt: end } }
-        ]
+        actualEndAt: { gte: start, lt: end, not: null }
       },
       select: {
         id: true,
@@ -69,7 +66,10 @@ getStatistics = async (period: string, user: AuthenticatedUser) => {
       ...(allocations.get(item.id) ?? defaultHourAllocation(item))
     }));
     const attendanceDays = new Set(
-      assignments.map((item) => getDateKeyAsiaShanghai(item.claimedAt ?? item.plannedStart))
+      assignments
+        .map((item) => item.actualEndAt)
+        .filter((date): date is Date => date !== null)
+        .map((date) => getDateKeyAsiaShanghai(date))
     ).size;
 
     return {
