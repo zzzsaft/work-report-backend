@@ -8,6 +8,7 @@ import { ClaimableOperationService } from "./claimable-service.js";
 import { WorkReportStatisticsService } from "./statistics-service.js";
 import { WorkReportAdminQueryService } from "./admin-query-service.js";
 import type { PermissionGroup } from "./permissions.js";
+import type { StaffStatsPeriod, WorkReportPeriod } from "./report-period.js";
 
 export { MAX_IMPORT_OPERATIONS, type ThirdPartyImportOperation, type PermissionGroup };
 
@@ -52,11 +53,11 @@ export class WorkReportService {
   removeClaimedAssignment = (assignmentId: string, user: AuthenticatedUser) =>
     this.assignments.removeClaimedAssignment(assignmentId, user);
 
-  getStatistics = (period: string, user: AuthenticatedUser) => this.statistics.getStatistics(period, user);
+  getStatistics = (period: WorkReportPeriod, user: AuthenticatedUser) => this.statistics.getStatistics(period, user);
 
-  getMyReports = (period: string, user: AuthenticatedUser) => this.statistics.getMyReports(period, user);
+  getMyReports = (period: WorkReportPeriod, user: AuthenticatedUser) => this.statistics.getMyReports(period, user);
 
-  getStaffStats = (period: string) => this.statistics.getStaffStats(period);
+  getStaffStats = (period: StaffStatsPeriod) => this.statistics.getStaffStats(period);
 
   getOrders = (page = 1, pageSize = 50) => this.admin.getOrders(page, pageSize);
 

@@ -7,6 +7,7 @@ import {
   requirePermissionManagement
 } from "../../middleware/auth.js";
 import { MAX_IMPORT_OPERATIONS, workReportService } from "./service.js";
+import { staffStatsPeriodQuerySchema, workReportPeriodQuerySchema } from "./report-period.js";
 
 const dateStringSchema = z.string().refine(
   (val) => {
@@ -234,7 +235,7 @@ workReportRouter.delete(
 workReportRouter.get(
   "/statistics/me",
   asyncHandler(async (req, res) => {
-    const query = z.object({ period: z.string().default("week") }).parse(req.query);
+    const query = workReportPeriodQuerySchema.parse(req.query);
     res.json(await workReportService.getStatistics(query.period, requireUser(req)));
   })
 );
@@ -242,7 +243,7 @@ workReportRouter.get(
 workReportRouter.get(
   "/reports/me",
   asyncHandler(async (req, res) => {
-    const query = z.object({ period: z.string().default("week") }).parse(req.query);
+    const query = workReportPeriodQuerySchema.parse(req.query);
     res.json(await workReportService.getMyReports(query.period, requireUser(req)));
   })
 );
@@ -251,7 +252,7 @@ workReportRouter.get(
   "/admin/staff-stats",
   requireCapability("canViewAdmin"),
   asyncHandler(async (req, res) => {
-    const query = z.object({ period: z.string().default("month") }).parse(req.query);
+    const query = staffStatsPeriodQuerySchema.parse(req.query);
     res.json(await workReportService.getStaffStats(query.period));
   })
 );

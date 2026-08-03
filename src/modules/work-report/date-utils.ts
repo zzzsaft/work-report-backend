@@ -1,4 +1,5 @@
 import { AppError } from "../../lib/errors.js";
+import type { WorkReportPeriod } from "./report-period.js";
 
 export const addHours = (date: Date, hours: number) => new Date(date.getTime() + hours * 3600_000);
 
@@ -7,7 +8,7 @@ export const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getM
 export const addDays = (date: Date, days: number) =>
   new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
 
-export const getPeriodRange = (period: string, now = new Date()) => {
+export const getPeriodRange = (period: WorkReportPeriod, now = new Date()) => {
   const today = startOfDay(now);
 
   if (period === "day") {
@@ -102,7 +103,7 @@ const shanghaiDate = (year: number, month: number, day: number) =>
   new Date(Date.UTC(year, month, day) - 8 * 3600 * 1000);
 
 /** 按北京时间计算的日期区间，和 getPeriodRange 接口保持一致但无本地时区副作用 */
-export const getPeriodRangeAsiaShanghai = (period: string, now = new Date()) => {
+export const getPeriodRangeAsiaShanghai = (period: WorkReportPeriod, now = new Date()) => {
   const todayStart = startOfDayAsiaShanghai(now);
   const todayParts = getAsiaShanghaiParts(todayStart);
 
