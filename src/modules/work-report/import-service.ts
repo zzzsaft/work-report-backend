@@ -23,6 +23,7 @@ export interface ThirdPartyImportOperation {
   plannedQuantity?: number;
   dueDate?: string | null;
   status?: "available" | "closed";
+  company?: string;
 }
 
 interface NormalizedThirdPartyImportOperation extends Omit<ThirdPartyImportOperation, "dueDate" | "operationNote" | "plannedQuantity" | "status"> {
@@ -91,6 +92,9 @@ const normalizeThirdPartyOperations = (operations: ThirdPartyImportOperation[]) 
 export class WorkReportImportService {
   constructor(private readonly db: PrismaClient) {}
 
+  private orderKey = (orderNo: string, company?: string) => `${orderNo}\u0000${company ?? ""}`;
+  private partKey = (orderNo: string, company: string | undefined, partNo: string) => `${orderNo}\u0000${company ?? ""}\u0000${partNo}`;
+
   importThirdPartyOperations = async (operations: ThirdPartyImportOperation[], user: AuthenticatedUser) => {
     if (operations.length > MAX_IMPORT_OPERATIONS) {
       throw new AppError(400, `单次最多导入 ${MAX_IMPORT_OPERATIONS} 条工序`);
@@ -103,7 +107,7 @@ export class WorkReportImportService {
       const batch = normalized.slice(batchStart, batchStart + BULK_IMPORT_BATCH_SIZE);
       try {
         const batchResults = await this.db.$transaction(async (tx) => {
-          const uniqueOrders = lastBy(batch, (item) => item.orderNo);
+          const uniqueOrders = lastBy(batch, (item) => this.orderKey(item.orderNo, item.company));
           const orderRows = uniqueOrders.map((item) => Prisma.sql`(
             ${randomUUID()},
             ${item.orderNo},
@@ -113,6 +117,7 @@ export class WorkReportImportService {
             ${0},
             ${item.dueDate},
             ${"in_progress"},
+            ${item.company ?? null},
             CURRENT_TIMESTAMP,
             CURRENT_TIMESTAMP
           )`);
@@ -120,10 +125,10 @@ export class WorkReportImportService {
           await tx.$executeRaw`
             INSERT INTO work_report.work_orders (
               id, order_no, product_code, product_name, planned_quantity,
-              completed_quantity, due_date, status, created_at, updated_at
+              completed_quantity, due_date, status, company, created_at, updated_at
             )
             VALUES ${Prisma.join(orderRows)}
-            ON CONFLICT (order_no) DO UPDATE SET
+            ON CONFLICT (order_no, company) DO UPDATE SET
               product_code = EXCLUDED.product_code,
               product_name = EXCLUDED.product_name,
               planned_quantity = EXCLUDED.planned_quantity,
@@ -132,15 +137,22 @@ export class WorkReportImportService {
               updated_at = CURRENT_TIMESTAMP
           `;
 
-          const orders = await tx.workOrder.findMany({
-            where: { orderNo: { in: uniqueOrders.map((item) => item.orderNo) } },
-            select: { id: true, orderNo: true }
-          });
-          const orderIdByNo = new Map(orders.map((order) => [order.orderNo, order.id]));
+          const orderConditions = uniqueOrders.map(
+            (item) => Prisma.sql`(order_no = ${item.orderNo} AND (company = ${item.company ?? ""} OR company IS NULL))`
+          );
+          const orders = orderConditions.length > 0
+            ? await tx.$queryRaw<{ id: string; order_no: string; company: string | null }[]>`
+                SELECT id, order_no::text, company FROM work_report.work_orders
+                WHERE ${Prisma.join(orderConditions, " OR ")}
+              `
+            : [];
+          const orderIdByKey = new Map(
+            orders.map((o) => [this.orderKey(o.order_no, o.company ?? undefined), o.id])
+          );
 
-          const uniqueParts = lastBy(batch, (item) => `${item.orderNo}\u0000${item.partNo}`);
+          const uniqueParts = lastBy(batch, (item) => this.partKey(item.orderNo, item.company, item.partNo));
           const partRows = uniqueParts.flatMap((item) => {
-            const workOrderId = orderIdByNo.get(item.orderNo);
+            const workOrderId = orderIdByKey.get(this.orderKey(item.orderNo, item.company));
             if (!workOrderId) return [];
 
             return [Prisma.sql`(
@@ -171,19 +183,22 @@ export class WorkReportImportService {
             `;
           }
 
-          const parts = await tx.workOrderPart.findMany({
-            where: {
-              workOrderId: { in: Array.from(orderIdByNo.values()) },
-              partNo: { in: uniqueParts.map((item) => item.partNo) }
-            },
-            select: { id: true, workOrderId: true, partNo: true }
-          });
+          const workOrderIds = Array.from(orderIdByKey.values());
+          const parts = workOrderIds.length > 0
+            ? await tx.workOrderPart.findMany({
+                where: {
+                  workOrderId: { in: workOrderIds },
+                  partNo: { in: uniqueParts.map((item) => item.partNo) }
+                },
+                select: { id: true, workOrderId: true, partNo: true }
+              })
+            : [];
           const partIdByOrderAndNo = new Map(
             parts.map((part) => [`${part.workOrderId}\u0000${part.partNo}`, part.id])
           );
 
           const validOperations = batch.flatMap((item) => {
-            const workOrderId = orderIdByNo.get(item.orderNo);
+            const workOrderId = orderIdByKey.get(this.orderKey(item.orderNo, item.company));
             const partId = workOrderId ? partIdByOrderAndNo.get(`${workOrderId}\u0000${item.partNo}`) : undefined;
             if (!workOrderId || !partId) return [];
             return [{ item, workOrderId, partId }];

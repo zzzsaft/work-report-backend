@@ -100,6 +100,7 @@ model User {
   openUserid        String?              @map("open_userid")
   mainDepartment    Int?                 @map("main_department")
   teamName          String?              @map("team_name")
+  teamId            String?              @map("team_id")
   status            String               @default("active")
   lastLoginAt       DateTime?            @map("last_login_at")
   createdAt         DateTime             @default(now()) @map("created_at")
@@ -107,7 +108,9 @@ model User {
   assignments       OperationAssignment[] @relation("WorkerAssignments")
   assignedItems     OperationAssignment[] @relation("AssignedBy")
   userRoles         UserRole[]
+  team              Team?                @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
+  @@index([teamId])
   @@map("users")
   @@schema("work_report")
 }
@@ -206,6 +209,51 @@ model OperationAssignment {
   @@schema("work_report")
 }
 
+model OperationWorkerAssignment {
+  id            String   @id @default(cuid())
+  operationCode String   @map("operation_code")
+  operationName String   @default("") @map("operation_name")
+  workerId      String   @map("worker_id")
+  workerName    String   @map("worker_name")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([operationCode, workerId])
+  @@index([operationCode])
+  @@index([workerId])
+  @@map("operation_worker_assignments")
+  @@schema("work_report")
+}
+
+model Team {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  users       User[]
+  operations  TeamOperationAssignment[]
+
+  @@map("teams")
+  @@schema("work_report")
+}
+
+model TeamOperationAssignment {
+  id            String   @id @default(cuid())
+  teamId        String   @map("team_id")
+  operationCode String   @map("operation_code")
+  operationName String   @default("") @map("operation_name")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, operationCode])
+  @@index([teamId])
+  @@index([operationCode])
+  @@map("team_operation_assignments")
+  @@schema("work_report")
+}
+
 model AssignmentCollaborator {
   id           String               @id @default(cuid())
   assignmentId String               @map("assignment_id")
@@ -256,22 +304,25 @@ model AttendanceRecord {
 
 model WorkOrder {
   id                String           @id @default(cuid())
-  orderNo           String           @unique @map("order_no")
+  orderNo           String           @map("order_no")
   productCode       String           @map("product_code")
   productName       String           @map("product_name")
   plannedQuantity   Int              @map("planned_quantity")
   completedQuantity Int              @default(0) @map("completed_quantity")
   dueDate           DateTime         @map("due_date") @db.Date
   status            String           @default("pending")
+  company           String?          @map("company")
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
   parts             WorkOrderPart[]
   operationPools    OperationPool[]
   assignments       OperationAssignment[]
 
+  @@unique([orderNo, company])
   @@index([orderNo])
   @@index([productCode])
   @@index([status])
+  @@index([company])
   @@map("work_orders")
   @@schema("work_report")
 }
@@ -324,3 +375,5 @@ model OperationPool {
   @@map("operation_pool")
   @@schema("work_report")
 }
+
+

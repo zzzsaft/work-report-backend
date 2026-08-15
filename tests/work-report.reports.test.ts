@@ -103,6 +103,46 @@ it("returns paginated report records and treats datetime endTime as an exact bou
     );
   });
 
+  it("filters report records by company", async () => {
+    const count = vi.fn().mockResolvedValue(0);
+    const findMany = vi.fn().mockResolvedValue([]);
+    const db = { operationAssignment: { count, findMany } };
+    const service = new WorkReportService(db as never);
+
+    await service.getReports({ company: "jctimes" });
+
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        status: { not: "cancelled" },
+        workOrder: { company: "jctimes" }
+      }
+    });
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        status: { not: "cancelled" },
+        workOrder: { company: "jctimes" }
+      }
+    }));
+  });
+
+  it("filters staff statistics by company", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 5, 25, 2)));
+
+    const findMany = vi.fn().mockResolvedValue([]);
+    const db = { operationAssignment: { findMany } };
+    const service = new WorkReportService(db as never);
+
+    await service.getStaffStats("month", undefined, "JingyiMT");
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        status: { not: "cancelled" },
+        workOrder: { company: "JingyiMT" }
+      })
+    }));
+  });
+
 it("summarizes non-cancelled assignments by completion date", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(Date.UTC(2026, 5, 25, 2))); // 2026-06-25T10:00+08:00

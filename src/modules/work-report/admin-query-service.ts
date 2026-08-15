@@ -118,10 +118,13 @@ updateWorkerPermission = async (workerId: string, permissionGroup: PermissionGro
     return serializeWorkerPermission(worker);
   };
 
-completeOperation = async (orderNo: string, partNo: string, operationNo: string) => {
+completeOperation = async (orderNo: string, partNo: string, operationNo: string, company?: string) => {
     const operation = await this.db.operationPool.findFirst({
       where: {
-        workOrder: { orderNo },
+        workOrder: {
+          orderNo,
+          ...(company ? { company } : {})
+        },
         part: { partNo },
         operationNo
       },

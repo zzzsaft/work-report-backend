@@ -41,6 +41,13 @@ const main = async () => {
     update: {}
   });
 
+  // Create demo team and assign worker
+  const demoTeam = await prisma.team.upsert({
+    where: { name: "生产一组" },
+    create: { name: "生产一组", description: "负责生产工序" },
+    update: {}
+  });
+
   const worker = await prisma.user.upsert({
     where: { id: "demo-worker" },
     create: {
@@ -48,9 +55,13 @@ const main = async () => {
       employeeNo: "EMP-20240018",
       name: "张师傅",
       nameInitials: "zsf",
-      teamName: "生产一组"
+      teamName: "生产一组",
+      teamId: demoTeam.id
     },
-    update: {}
+    update: {
+      teamName: "生产一组",
+      teamId: demoTeam.id
+    }
   });
 
   await prisma.userRole.upsert({
@@ -60,9 +71,10 @@ const main = async () => {
   });
 
   const workOrder = await prisma.workOrder.upsert({
-    where: { orderNo: "WO-20260623-018" },
+    where: { orderNo_company: { orderNo: "WO-20260623-018", company: "jctimes" } },
     create: {
       orderNo: "WO-20260623-018",
+      company: "jctimes",
       productCode: "CP-JSJ-240623-07",
       productName: "减速机外壳",
       plannedQuantity: 120,

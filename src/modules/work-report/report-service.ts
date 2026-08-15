@@ -14,6 +14,7 @@ export class WorkReportQueryService {
 getReports = async (filters: {
     keyword?: string;
     orderNo?: string;
+    company?: string;
     operatorName?: string;
     status?: string;
     operationCode?: string;
@@ -43,6 +44,13 @@ getReports = async (filters: {
       where.workOrder = {
         ...(where.workOrder as Record<string, unknown>),
         orderNo: { contains: filters.orderNo, mode: "insensitive" as const }
+      };
+    }
+
+    if (filters.company) {
+      where.workOrder = {
+        ...(where.workOrder as Record<string, unknown>),
+        company: filters.company
       };
     }
 

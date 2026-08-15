@@ -36,7 +36,8 @@ const thirdPartyImportOperationSchema = z.object({
   operationNote: z.string().trim().optional(),
   plannedQuantity: z.coerce.number().positive().optional(),
   dueDate: dateStringSchema.nullable().optional(),
-  status: z.enum(["available", "closed"]).optional()
+  status: z.enum(["available", "closed"]).optional(),
+  company: z.string().trim().optional()
 });
 
 const thirdPartyImportSchema = z.union([
@@ -69,6 +70,7 @@ const leaderImportSchema = z.object({
 });
 
 const permissionGroupSchema = z.enum(["worker", "leader", "admin"]);
+const companyFilterSchema = z.enum(["jctimes", "JingyiMT"]).optional();
 const updateWorkerPermissionSchema = z.object({
   permissionGroup: permissionGroupSchema
 });
@@ -251,8 +253,29 @@ workReportRouter.get(
   "/admin/staff-stats",
   requireCapability("canViewAdmin"),
   asyncHandler(async (req, res) => {
-    const query = z.object({ period: z.string().default("month") }).parse(req.query);
-    res.json(await workReportService.getStaffStats(query.period));
+    const query = z.object({
+      period: z.string().default("month"),
+      operationNames: z.union([z.string().optional(), z.array(z.string()).optional()]).optional(),
+      company: companyFilterSchema
+    }).parse(req.query);
+    const names = Array.isArray(query.operationNames)
+      ? query.operationNames.filter(Boolean)
+      : query.operationNames
+        ? [query.operationNames]
+        : [];
+    res.json(await workReportService.getStaffStats(query.period, names.length ? names : undefined, query.company));
+  })
+);
+
+workReportRouter.get(
+  "/admin/staff-operation-names",
+  requireCapability("canViewAdmin"),
+  asyncHandler(async (req, res) => {
+    const query = z.object({
+      period: z.string().default("month"),
+      company: companyFilterSchema
+    }).parse(req.query);
+    res.json(await workReportService.listOperationNames(query.period, query.company));
   })
 );
 
@@ -287,7 +310,6 @@ workReportRouter.get(
 
 workReportRouter.get(
   "/admin/workers",
-  requireCapability("canAssignWorkers"),
   asyncHandler(async (req, res) => {
     const query = z
       .object({
@@ -327,6 +349,7 @@ workReportRouter.get(
       .object({
         keyword: z.string().optional(),
         orderNo: z.string().optional(),
+        company: companyFilterSchema,
         operatorName: z.string().optional(),
         status: z.string().optional(),
         operationCode: z.string().optional(),
@@ -393,25 +416,212 @@ workReportRouter.post(
       .object({
         orderNo: z.string().trim().min(1),
         partNo: z.string().trim().min(1),
-        operationNo: z.string().trim().min(1)
+        operationNo: z.string().trim().min(1),
+        company: z.string().trim().optional()
       })
       .parse(req.body);
-    res.json(await workReportService.completeOperation(body.orderNo, body.partNo, body.operationNo));
+    res.json(await workReportService.completeOperation(body.orderNo, body.partNo, body.operationNo, body.company));
   })
 );
 
 workReportRouter.post(
   "/admin/assignments",
-  requireCapability("canAssignWorkers"),
   asyncHandler(async () => {
     notImplemented();
   })
 );
 
+workReportRouter.get(
+  "/admin/operation-worker-assignments",
+  asyncHandler(async (req, res) => {
+    const query = z.object({ operationCode: z.string().optional() }).parse(req.query);
+    res.json(await workReportService.listOperationWorkerAssignments(query.operationCode));
+  })
+);
+
+workReportRouter.post(
+  "/admin/operation-worker-assignments",
+  asyncHandler(async (req, res) => {
+    const body = z.object({
+      operationCode: z.string().trim().min(1),
+      workerId: z.string().trim().min(1),
+      workerName: z.string().trim().min(1)
+    }).parse(req.body);
+    res.status(201).json(await workReportService.createOperationWorkerAssignment(body.operationCode, body.workerId, body.workerName));
+  })
+);
+
+workReportRouter.delete(
+  "/admin/operation-worker-assignments/:id",
+  asyncHandler(async (req, res) => {
+    const params = z.object({ id: z.string().min(1) }).parse(req.params);
+    res.json(await workReportService.deleteOperationWorkerAssignment(params.id));
+  })
+);
+
+workReportRouter.post(
+  "/admin/operation-worker-assignments/batch-delete",
+  asyncHandler(async (req, res) => {
+    const body = z.object({ ids: z.array(z.string().min(1)) }).parse(req.body);
+    res.json(await workReportService.batchDeleteOperationWorkerAssignments(body.ids));
+  })
+);
+
+workReportRouter.post(
+  "/admin/operation-worker-assignments/sync",
+  asyncHandler(async (req, res) => {
+    res.json(await workReportService.syncOperationWorkerAssignments());
+  })
+);
+
+workReportRouter.get(
+  "/admin/operation-worker-assignments/unmapped-workers",
+  asyncHandler(async (req, res) => {
+    const query = z
+      .object({
+        keyword: z.string().optional(),
+        page: z.coerce.number().int().default(1),
+        pageSize: z.coerce.number().int().default(10)
+      })
+      .parse(req.query);
+    res.json(await workReportService.listUnmappedWorkers(query.keyword, query.page, query.pageSize));
+  })
+);
+
 workReportRouter.delete(
   "/admin/assignments/:assignmentId",
-  requireCapability("canForceRemoveAssignments"),
   asyncHandler(async () => {
     notImplemented();
+  })
+);
+
+// ===== Team Management Routes =====
+
+workReportRouter.get(
+  "/admin/teams",
+  asyncHandler(async (_req, res) => {
+    res.json(await workReportService.listTeams());
+  })
+);
+
+workReportRouter.post(
+  "/admin/teams",
+  asyncHandler(async (req, res) => {
+    const body = z
+      .object({
+        name: z.string().trim().min(1),
+        description: z.string().trim().optional()
+      })
+      .parse(req.body);
+    res.status(201).json(await workReportService.createTeam(body.name, body.description));
+  })
+);
+
+workReportRouter.put(
+  "/admin/teams/:id",
+  asyncHandler(async (req, res) => {
+    const params = z.object({ id: z.string().min(1) }).parse(req.params);
+    const body = z
+      .object({
+        name: z.string().trim().min(1),
+        description: z.string().trim().optional()
+      })
+      .parse(req.body);
+    res.json(await workReportService.updateTeam(params.id, body.name, body.description));
+  })
+);
+
+workReportRouter.delete(
+  "/admin/teams/:id",
+  asyncHandler(async (req, res) => {
+    const params = z.object({ id: z.string().min(1) }).parse(req.params);
+    res.json(await workReportService.deleteTeam(params.id));
+  })
+);
+
+workReportRouter.get(
+  "/admin/teams/:id/members",
+  asyncHandler(async (req, res) => {
+    const params = z.object({ id: z.string().min(1) }).parse(req.params);
+    res.json(await workReportService.getTeamMembers(params.id));
+  })
+);
+
+workReportRouter.post(
+  "/admin/teams/:id/members",
+  asyncHandler(async (req, res) => {
+    const params = z.object({ id: z.string().min(1) }).parse(req.params);
+    const body = z.object({ userId: z.string().trim().min(1) }).parse(req.body);
+    res.status(201).json(await workReportService.addTeamMember(params.id, body.userId));
+  })
+);
+
+workReportRouter.delete(
+  "/admin/teams/:id/members/:userId",
+  asyncHandler(async (req, res) => {
+    const params = z
+      .object({ id: z.string().min(1), userId: z.string().min(1) })
+      .parse(req.params);
+    res.json(await workReportService.removeTeamMember(params.id, params.userId));
+  })
+);
+
+workReportRouter.patch(
+  "/admin/workers/:userId/team",
+  asyncHandler(async (req, res) => {
+    const params = z.object({ userId: z.string().min(1) }).parse(req.params);
+    const body = z.object({ teamId: z.string().trim().nullable() }).parse(req.body);
+    res.json(await workReportService.setWorkerTeam(params.userId, body.teamId));
+  })
+);
+
+// ===== Team Operation Assignment Routes =====
+
+workReportRouter.get(
+  "/admin/teams/:id/operations",
+  asyncHandler(async (req, res) => {
+    const params = z.object({ id: z.string().min(1) }).parse(req.params);
+    res.json(await workReportService.listTeamOperations(params.id));
+  })
+);
+
+workReportRouter.post(
+  "/admin/teams/:id/operations",
+  asyncHandler(async (req, res) => {
+    const params = z.object({ id: z.string().min(1) }).parse(req.params);
+    const body = z
+      .object({
+        operationCode: z.string().trim().min(1),
+        operationName: z.string().trim().optional()
+      })
+      .parse(req.body);
+    res
+      .status(201)
+      .json(
+        await workReportService.createTeamOperation(params.id, body.operationCode, body.operationName)
+      );
+  })
+);
+
+workReportRouter.delete(
+  "/admin/team-operations/:id",
+  asyncHandler(async (req, res) => {
+    const params = z.object({ id: z.string().min(1) }).parse(req.params);
+    res.json(await workReportService.deleteTeamOperation(params.id));
+  })
+);
+
+workReportRouter.post(
+  "/admin/team-operations/batch-delete",
+  asyncHandler(async (req, res) => {
+    const body = z.object({ ids: z.array(z.string().min(1)) }).parse(req.body);
+    res.json(await workReportService.batchDeleteTeamOperations(body.ids));
+  })
+);
+
+workReportRouter.post(
+  "/admin/team-operations/sync",
+  asyncHandler(async (_req, res) => {
+    res.json(await workReportService.syncTeamOperations());
   })
 );

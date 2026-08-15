@@ -1,13 +1,20 @@
 import type { PrismaClient } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthenticatedUser } from "../../middleware/auth.js";
+import { AppError } from "../../lib/errors.js";
 import { WorkReportImportService, MAX_IMPORT_OPERATIONS, type ThirdPartyImportOperation } from "./import-service.js";
 import { WorkReportQueryService } from "./report-service.js";
 import { AssignmentService } from "./assignment-service.js";
 import { ClaimableOperationService } from "./claimable-service.js";
 import { WorkReportStatisticsService } from "./statistics-service.js";
 import { WorkReportAdminQueryService } from "./admin-query-service.js";
+import { OperationWorkerAssignmentService } from "./operation-worker-assignment-service.js";
+import { TeamService } from "./team-service.js";
+import { TeamOperationAssignmentService } from "./team-operation-assignment-service.js";
 import type { PermissionGroup } from "./permissions.js";
+import { ASSIGNMENT_STATUS } from "./constants.js";
+import { getPeriodRangeAsiaShanghai } from "./date-utils.js";
+import { uniqueValues } from "../../lib/arrays.js";
 
 export { MAX_IMPORT_OPERATIONS, type ThirdPartyImportOperation, type PermissionGroup };
 
@@ -18,6 +25,9 @@ export class WorkReportService {
   private readonly claimable: ClaimableOperationService;
   private readonly statistics: WorkReportStatisticsService;
   private readonly admin: WorkReportAdminQueryService;
+  private readonly operationWorkerAssignments: OperationWorkerAssignmentService;
+  private readonly teams: TeamService;
+  private readonly teamOperationAssignments: TeamOperationAssignmentService;
 
   constructor(private readonly db: PrismaClient = prisma) {
     this.importService = new WorkReportImportService(db);
@@ -26,6 +36,9 @@ export class WorkReportService {
     this.claimable = new ClaimableOperationService(db);
     this.statistics = new WorkReportStatisticsService(db);
     this.admin = new WorkReportAdminQueryService(db);
+    this.operationWorkerAssignments = new OperationWorkerAssignmentService(db);
+    this.teams = new TeamService(db);
+    this.teamOperationAssignments = new TeamOperationAssignmentService(db);
   }
 
   getReports = (filters: Parameters<WorkReportQueryService["getReports"]>[0] = {}) =>
@@ -56,7 +69,45 @@ export class WorkReportService {
 
   getMyReports = (period: string, user: AuthenticatedUser) => this.statistics.getMyReports(period, user);
 
-  getStaffStats = (period: string) => this.statistics.getStaffStats(period);
+  getStaffStats = (period: string, operationNames?: string[], company?: string) =>
+    this.statistics.getStaffStats(period, operationNames, company);
+
+  listOperationNames = async (period: string, company?: string) => {
+    if (!["month", "lastMonth"].includes(period)) {
+      throw new AppError(400, "period 必须是 month 或 lastMonth");
+    }
+    const { start, end } = getPeriodRangeAsiaShanghai(period);
+    const results = await this.db.operationAssignment.findMany({
+      where: {
+        status: { not: ASSIGNMENT_STATUS.cancelled },
+        actualEndAt: { gte: start, lt: end, not: null },
+        ...(company ? { workOrder: { company } } : {})
+      },
+      select: {
+        operationPool: { select: { operationName: true } }
+      },
+      distinct: ["operationPoolId"]
+    });
+    return uniqueValues(
+      results
+        .map((r) => r.operationPool?.operationName)
+        .filter((name): name is string => typeof name === "string" && name.length > 0)
+    ).sort();
+  };
+
+  listOperationWorkerAssignments = (operationCode?: string) => this.operationWorkerAssignments.list(operationCode);
+
+  createOperationWorkerAssignment = (operationCode: string, workerId: string, workerName: string) =>
+    this.operationWorkerAssignments.create(operationCode, workerId, workerName);
+
+  deleteOperationWorkerAssignment = (id: string) => this.operationWorkerAssignments.delete(id);
+
+  batchDeleteOperationWorkerAssignments = (ids: string[]) => this.operationWorkerAssignments.batchDelete(ids);
+
+  syncOperationWorkerAssignments = () => this.operationWorkerAssignments.syncFromAssignments();
+
+  listUnmappedWorkers = (keyword?: string, page?: number, pageSize?: number) =>
+    this.operationWorkerAssignments.listUnmappedWorkers(keyword, page, pageSize);
 
   getOrders = (page = 1, pageSize = 50) => this.admin.getOrders(page, pageSize);
 
@@ -70,8 +121,37 @@ export class WorkReportService {
   importThirdPartyOperations = (operations: ThirdPartyImportOperation[], user: AuthenticatedUser) =>
     this.importService.importThirdPartyOperations(operations, user);
 
-  completeOperation = (orderNo: string, partNo: string, operationNo: string) =>
-    this.admin.completeOperation(orderNo, partNo, operationNo);
+  completeOperation = (orderNo: string, partNo: string, operationNo: string, company?: string) =>
+    this.admin.completeOperation(orderNo, partNo, operationNo, company);
+
+  // Team management
+  listTeams = () => this.teams.list();
+
+  createTeam = (name: string, description?: string) => this.teams.create(name, description);
+
+  updateTeam = (id: string, name: string, description?: string) => this.teams.update(id, name, description);
+
+  deleteTeam = (id: string) => this.teams.delete(id);
+
+  getTeamMembers = (teamId: string) => this.teams.getMembers(teamId);
+
+  addTeamMember = (teamId: string, userId: string) => this.teams.addMember(teamId, userId);
+
+  removeTeamMember = (teamId: string, userId: string) => this.teams.removeMember(teamId, userId);
+
+  setWorkerTeam = (userId: string, teamId: string | null) => this.teams.setMemberTeam(userId, teamId);
+
+  // Team operation assignments
+  listTeamOperations = (teamId: string) => this.teamOperationAssignments.list(teamId);
+
+  createTeamOperation = (teamId: string, operationCode: string, operationName?: string) =>
+    this.teamOperationAssignments.create(teamId, operationCode, operationName);
+
+  deleteTeamOperation = (id: string) => this.teamOperationAssignments.delete(id);
+
+  batchDeleteTeamOperations = (ids: string[]) => this.teamOperationAssignments.batchDelete(ids);
+
+  syncTeamOperations = () => this.teamOperationAssignments.syncFromWorkerAssignments();
 }
 
 export const workReportService = new WorkReportService();

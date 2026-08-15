@@ -140,17 +140,37 @@ getStatistics = async (period: string, user: AuthenticatedUser) => {
     return assignments.map((assignment) => serializeReportRecord(assignment, allocations.get(assignment.id)));
   };
 
-  getStaffStats = async (period: string) => {
+  getStaffStats = async (period: string, operationNames?: string[], company?: string) => {
     if (!["month", "lastMonth"].includes(period)) {
       throw new AppError(400, "period 必须是 month 或 lastMonth");
     }
 
     const { start, end } = getPeriodRangeAsiaShanghai(period);
+    const normalizedNames = (operationNames ?? [])
+      .map((n) => n.trim())
+      .filter((n) => n.length > 0);
+
+    const where: Record<string, unknown> = {
+      status: { not: ASSIGNMENT_STATUS.cancelled },
+      actualEndAt: { gte: start, lt: end, not: null }
+    };
+
+    if (company) {
+      where.workOrder = { company };
+    }
+
+    if (normalizedNames.length === 1) {
+      where.operationPool = {
+        operationName: { contains: normalizedNames[0], mode: "insensitive" as const }
+      };
+    } else if (normalizedNames.length > 1) {
+      where.AND = normalizedNames.map((name) => ({
+        operationPool: { operationName: { contains: name, mode: "insensitive" as const } }
+      }));
+    }
+
     const assignments = await this.db.operationAssignment.findMany({
-      where: {
-        status: { not: ASSIGNMENT_STATUS.cancelled },
-        actualEndAt: { gte: start, lt: end, not: null }
-      },
+      where,
       select: {
         id: true,
         workerId: true,
