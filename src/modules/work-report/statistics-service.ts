@@ -94,15 +94,7 @@ getStatistics = async (period: WorkReportPeriod, user: AuthenticatedUser) => {
     return assignments.map((assignment) => serializeReportRecord(assignment, allocations.get(assignment.id)));
   };
 
-<<<<<<< HEAD
-  getStaffStats = async (period: string, operationNames?: string[], company?: string) => {
-    if (!["month", "lastMonth"].includes(period)) {
-      throw new AppError(400, "period 必须是 month 或 lastMonth");
-    }
-
-=======
-  getStaffStats = async (period: StaffStatsPeriod) => {
->>>>>>> cfc0d358c612a7d670e7cd55486af5c0261303cf
+  getStaffStats = async (period: StaffStatsPeriod, operationNames?: string[], company?: string) => {
     const { start, end } = getPeriodRangeAsiaShanghai(period);
     const normalizedNames = (operationNames ?? [])
       .map((n) => n.trim())

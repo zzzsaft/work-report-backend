@@ -7,7 +7,7 @@ import {
   requirePermissionManagement
 } from "../../middleware/auth.js";
 import { MAX_IMPORT_OPERATIONS, workReportService } from "./service.js";
-import { staffStatsPeriodQuerySchema, workReportPeriodQuerySchema } from "./report-period.js";
+import { staffStatsPeriodSchema, staffStatsPeriodQuerySchema, workReportPeriodQuerySchema } from "./report-period.js";
 
 const dateStringSchema = z.string().refine(
   (val) => {
@@ -254,9 +254,8 @@ workReportRouter.get(
   "/admin/staff-stats",
   requireCapability("canViewAdmin"),
   asyncHandler(async (req, res) => {
-<<<<<<< HEAD
     const query = z.object({
-      period: z.string().default("month"),
+      period: staffStatsPeriodSchema.default("month"),
       operationNames: z.union([z.string().optional(), z.array(z.string()).optional()]).optional(),
       company: companyFilterSchema
     }).parse(req.query);
@@ -274,14 +273,10 @@ workReportRouter.get(
   requireCapability("canViewAdmin"),
   asyncHandler(async (req, res) => {
     const query = z.object({
-      period: z.string().default("month"),
+      period: staffStatsPeriodSchema.default("month"),
       company: companyFilterSchema
     }).parse(req.query);
     res.json(await workReportService.listOperationNames(query.period, query.company));
-=======
-    const query = staffStatsPeriodQuerySchema.parse(req.query);
-    res.json(await workReportService.getStaffStats(query.period));
->>>>>>> cfc0d358c612a7d670e7cd55486af5c0261303cf
   })
 );
 

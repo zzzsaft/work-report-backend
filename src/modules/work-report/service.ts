@@ -12,13 +12,10 @@ import { OperationWorkerAssignmentService } from "./operation-worker-assignment-
 import { TeamService } from "./team-service.js";
 import { TeamOperationAssignmentService } from "./team-operation-assignment-service.js";
 import type { PermissionGroup } from "./permissions.js";
-<<<<<<< HEAD
 import { ASSIGNMENT_STATUS } from "./constants.js";
 import { getPeriodRangeAsiaShanghai } from "./date-utils.js";
 import { uniqueValues } from "../../lib/arrays.js";
-=======
 import type { StaffStatsPeriod, WorkReportPeriod } from "./report-period.js";
->>>>>>> cfc0d358c612a7d670e7cd55486af5c0261303cf
 
 export { MAX_IMPORT_OPERATIONS, type ThirdPartyImportOperation, type PermissionGroup };
 
@@ -73,14 +70,10 @@ export class WorkReportService {
 
   getMyReports = (period: WorkReportPeriod, user: AuthenticatedUser) => this.statistics.getMyReports(period, user);
 
-<<<<<<< HEAD
-  getStaffStats = (period: string, operationNames?: string[], company?: string) =>
+  getStaffStats = (period: StaffStatsPeriod, operationNames?: string[], company?: string) =>
     this.statistics.getStaffStats(period, operationNames, company);
 
-  listOperationNames = async (period: string, company?: string) => {
-    if (!["month", "lastMonth"].includes(period)) {
-      throw new AppError(400, "period 必须是 month 或 lastMonth");
-    }
+  listOperationNames = async (period: StaffStatsPeriod, company?: string) => {
     const { start, end } = getPeriodRangeAsiaShanghai(period);
     const results = await this.db.operationAssignment.findMany({
       where: {
@@ -113,9 +106,6 @@ export class WorkReportService {
 
   listUnmappedWorkers = (keyword?: string, page?: number, pageSize?: number) =>
     this.operationWorkerAssignments.listUnmappedWorkers(keyword, page, pageSize);
-=======
-  getStaffStats = (period: StaffStatsPeriod) => this.statistics.getStaffStats(period);
->>>>>>> cfc0d358c612a7d670e7cd55486af5c0261303cf
 
   getOrders = (page = 1, pageSize = 50) => this.admin.getOrders(page, pageSize);
 
