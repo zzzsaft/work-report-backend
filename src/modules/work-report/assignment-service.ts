@@ -36,7 +36,8 @@ getAssignments = async (user: AuthenticatedUser) => {
 claimOperation = async (
     operationId: string,
     user: AuthenticatedUser,
-    options?: { startTime?: Date; endTime?: Date }
+    options?: { startTime?: Date; endTime?: Date },
+    permissionEnabled = false
   ) => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
@@ -52,6 +53,27 @@ claimOperation = async (
           }
           if (operation.maxClaimWorkers !== null && operation.claimedWorkers >= operation.maxClaimWorkers) {
             throw new AppError(409, "该工序领取人数已满");
+          }
+
+          // 班组工序权限校验：员工所在班组必须已分配该工序，否则提示联系管理员
+          if (permissionEnabled) {
+            const worker = await tx.user.findUnique({
+              where: { id: user.id },
+              select: { teamId: true }
+            });
+            const teamId = worker?.teamId;
+            if (!teamId) {
+              throw new AppError(403, "您尚未加入班组，请联系管理员分配权限");
+            }
+            const teamOperation = await tx.teamOperationAssignment.findFirst({
+              where: {
+                teamId,
+                operationCode: { equals: operation.operationCode, mode: "insensitive" as const }
+              }
+            });
+            if (!teamOperation) {
+              throw new AppError(403, "您的班组未分配该工序，请联系管理员分配权限");
+            }
           }
 
           const duplicated = await tx.operationAssignment.findFirst({

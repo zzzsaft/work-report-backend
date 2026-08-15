@@ -626,3 +626,24 @@ workReportRouter.post(
     res.json(await workReportService.syncTeamOperations());
   })
 );
+
+// ===== System Config Routes =====
+
+workReportRouter.get(
+  "/admin/system-config",
+  requireCapability("canViewAdmin"),
+  asyncHandler(async (_req, res) => {
+    res.json(await workReportService.getSystemConfig());
+  })
+);
+
+workReportRouter.put(
+  "/admin/system-config",
+  requireCapability("canViewAdmin"),
+  asyncHandler(async (req, res) => {
+    const body = z.object({
+      teamOperationPermissionEnabled: z.boolean().optional()
+    }).parse(req.body);
+    res.json(await workReportService.updateSystemConfig(body));
+  })
+);

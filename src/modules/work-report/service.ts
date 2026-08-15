@@ -11,6 +11,7 @@ import { WorkReportAdminQueryService } from "./admin-query-service.js";
 import { OperationWorkerAssignmentService } from "./operation-worker-assignment-service.js";
 import { TeamService } from "./team-service.js";
 import { TeamOperationAssignmentService } from "./team-operation-assignment-service.js";
+import { SystemConfigService } from "./system-config-service.js";
 import type { PermissionGroup } from "./permissions.js";
 import { ASSIGNMENT_STATUS } from "./constants.js";
 import { getPeriodRangeAsiaShanghai } from "./date-utils.js";
@@ -29,6 +30,7 @@ export class WorkReportService {
   private readonly operationWorkerAssignments: OperationWorkerAssignmentService;
   private readonly teams: TeamService;
   private readonly teamOperationAssignments: TeamOperationAssignmentService;
+  private readonly systemConfig: SystemConfigService;
 
   constructor(private readonly db: PrismaClient = prisma) {
     this.importService = new WorkReportImportService(db);
@@ -40,6 +42,7 @@ export class WorkReportService {
     this.operationWorkerAssignments = new OperationWorkerAssignmentService(db);
     this.teams = new TeamService(db);
     this.teamOperationAssignments = new TeamOperationAssignmentService(db);
+    this.systemConfig = new SystemConfigService(db);
   }
 
   getReports = (filters: Parameters<WorkReportQueryService["getReports"]>[0] = {}) =>
@@ -57,11 +60,14 @@ export class WorkReportService {
 
   getClaimableOperations = (partId: string) => this.claimable.getClaimableOperations(partId);
 
-  claimOperation = (
+  claimOperation = async (
     operationId: string,
     user: AuthenticatedUser,
     options?: { startTime?: Date; endTime?: Date }
-  ) => this.assignments.claimOperation(operationId, user, options);
+  ) => {
+    const config = await this.systemConfig.get();
+    return this.assignments.claimOperation(operationId, user, options, config.teamOperationPermissionEnabled);
+  };
 
   removeClaimedAssignment = (assignmentId: string, user: AuthenticatedUser) =>
     this.assignments.removeClaimedAssignment(assignmentId, user);
@@ -150,6 +156,12 @@ export class WorkReportService {
   batchDeleteTeamOperations = (ids: string[]) => this.teamOperationAssignments.batchDelete(ids);
 
   syncTeamOperations = () => this.teamOperationAssignments.syncFromWorkerAssignments();
+
+  // System config
+  getSystemConfig = () => this.systemConfig.get();
+
+  updateSystemConfig = (data: { teamOperationPermissionEnabled?: boolean }) =>
+    this.systemConfig.update(data);
 }
 
 export const workReportService = new WorkReportService();

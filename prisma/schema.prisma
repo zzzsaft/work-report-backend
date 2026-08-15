@@ -71,6 +71,16 @@ model XftIntegrationConfig {
   @@schema("work_report")
 }
 
+model SystemConfig {
+  id                            String  @id @default("default")
+  teamOperationPermissionEnabled Boolean @default(false) @map("team_operation_permission_enabled")
+  createdAt                     DateTime @default(now()) @map("created_at")
+  updatedAt                     DateTime @updatedAt @map("updated_at")
+
+  @@map("system_configs")
+  @@schema("work_report")
+}
+
 model User {
   id                String               @id @default(cuid())
   wecomUserId       String?              @map("wecom_user_id")
