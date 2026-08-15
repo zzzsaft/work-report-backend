@@ -12,9 +12,13 @@ import { OperationWorkerAssignmentService } from "./operation-worker-assignment-
 import { TeamService } from "./team-service.js";
 import { TeamOperationAssignmentService } from "./team-operation-assignment-service.js";
 import type { PermissionGroup } from "./permissions.js";
+<<<<<<< HEAD
 import { ASSIGNMENT_STATUS } from "./constants.js";
 import { getPeriodRangeAsiaShanghai } from "./date-utils.js";
 import { uniqueValues } from "../../lib/arrays.js";
+=======
+import type { StaffStatsPeriod, WorkReportPeriod } from "./report-period.js";
+>>>>>>> cfc0d358c612a7d670e7cd55486af5c0261303cf
 
 export { MAX_IMPORT_OPERATIONS, type ThirdPartyImportOperation, type PermissionGroup };
 
@@ -65,10 +69,11 @@ export class WorkReportService {
   removeClaimedAssignment = (assignmentId: string, user: AuthenticatedUser) =>
     this.assignments.removeClaimedAssignment(assignmentId, user);
 
-  getStatistics = (period: string, user: AuthenticatedUser) => this.statistics.getStatistics(period, user);
+  getStatistics = (period: WorkReportPeriod, user: AuthenticatedUser) => this.statistics.getStatistics(period, user);
 
-  getMyReports = (period: string, user: AuthenticatedUser) => this.statistics.getMyReports(period, user);
+  getMyReports = (period: WorkReportPeriod, user: AuthenticatedUser) => this.statistics.getMyReports(period, user);
 
+<<<<<<< HEAD
   getStaffStats = (period: string, operationNames?: string[], company?: string) =>
     this.statistics.getStaffStats(period, operationNames, company);
 
@@ -108,6 +113,9 @@ export class WorkReportService {
 
   listUnmappedWorkers = (keyword?: string, page?: number, pageSize?: number) =>
     this.operationWorkerAssignments.listUnmappedWorkers(keyword, page, pageSize);
+=======
+  getStaffStats = (period: StaffStatsPeriod) => this.statistics.getStaffStats(period);
+>>>>>>> cfc0d358c612a7d670e7cd55486af5c0261303cf
 
   getOrders = (page = 1, pageSize = 50) => this.admin.getOrders(page, pageSize);
 

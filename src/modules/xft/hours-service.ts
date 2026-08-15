@@ -1,14 +1,18 @@
 import type { PrismaClient } from "@prisma/client";
-import { uniqueValues } from "../../lib/arrays.js";
-import { calculateHourAllocations, defaultHourAllocation } from "../work-report/hour-allocation.js";
+import { AssignmentHoursService } from "../work-report/assignment-hours-service.js";
+import { defaultHourAllocation } from "../work-report/hour-allocation.js";
 import { getSalaryPeriodRange, roundHours } from "./period.js";
 import type { PersistedXftConfig, XftHoursRow, XftManualHoursInput } from "./types.js";
 
 export class XftHoursService {
+  private readonly assignmentHours: AssignmentHoursService;
+
   constructor(
     private readonly db: PrismaClient,
     private readonly requireReadyConfig: (salaryPeriod?: string) => Promise<PersistedXftConfig>
-  ) {}
+  ) {
+    this.assignmentHours = new AssignmentHoursService(db);
+  }
 
 previewHours = async (salaryPeriod?: string): Promise<XftHoursRow[]> => {
     const configRow = await this.requireReadyConfig(salaryPeriod);
@@ -44,32 +48,7 @@ previewHours = async (salaryPeriod?: string): Promise<XftHoursRow[]> => {
       },
       orderBy: [{ workerName: "asc" }, { plannedStart: "asc" }]
     });
-    const operationPoolIds = uniqueValues(
-      assignments
-        .map((assignment) => assignment.operationPoolId)
-        .filter((operationPoolId): operationPoolId is string => typeof operationPoolId === "string")
-    );
-    const allocationParticipants = operationPoolIds.length
-      ? await this.db.operationAssignment.findMany({
-          where: {
-            operationPoolId: { in: operationPoolIds },
-            status: { not: "cancelled" }
-          },
-          select: {
-            id: true,
-            operationPoolId: true,
-            estimatedHours: true,
-            actualStartAt: true,
-            actualEndAt: true,
-            operationPool: {
-              select: {
-                estimatedHours: true
-              }
-            }
-          }
-        })
-      : [];
-    const allocations = calculateHourAllocations(allocationParticipants);
+    const allocations = await this.assignmentHours.getAllocationsForAssignments(assignments);
 
     const grouped = new Map<string, XftHoursRow>();
     for (const assignment of assignments) {

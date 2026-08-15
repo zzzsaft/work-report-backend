@@ -1,15 +1,18 @@
 import type { PrismaClient } from "@prisma/client";
 import { AppError } from "../../lib/errors.js";
-import { uniqueValues } from "../../lib/arrays.js";
 import { ASSIGNMENT_STATUS } from "./constants.js";
-import { calculateHourAllocations } from "./hour-allocation.js";
+import { AssignmentHoursService } from "./assignment-hours-service.js";
 import { serializeReportRecord } from "./report-serializers.js";
 import { reportDateRange } from "./date-utils.js";
 
 const MAX_REPORTS_PAGE_SIZE = 100;
 
 export class WorkReportQueryService {
-  constructor(private readonly db: PrismaClient) {}
+  private readonly assignmentHours: AssignmentHoursService;
+
+  constructor(private readonly db: PrismaClient) {
+    this.assignmentHours = new AssignmentHoursService(db);
+  }
 
 getReports = async (filters: {
     keyword?: string;
@@ -96,28 +99,7 @@ getReports = async (filters: {
         orderBy: [{ claimedAt: "desc" }, { id: "desc" }]
       })
     ]);
-    const operationPoolIds = uniqueValues(
-      assignments
-        .map((assignment) => assignment.operationPoolId)
-        .filter((operationPoolId): operationPoolId is string => typeof operationPoolId === "string")
-    );
-    const allocationParticipants = operationPoolIds.length
-      ? await this.db.operationAssignment.findMany({
-          where: {
-            operationPoolId: { in: operationPoolIds },
-            status: { not: ASSIGNMENT_STATUS.cancelled }
-          },
-          select: {
-            id: true,
-            operationPoolId: true,
-            estimatedHours: true,
-            actualStartAt: true,
-            actualEndAt: true,
-            operationPool: { select: { estimatedHours: true } }
-          }
-        })
-      : [];
-    const allocations = calculateHourAllocations(allocationParticipants);
+    const allocations = await this.assignmentHours.getAllocationsForAssignments(assignments);
 
     return {
       items: assignments.map((assignment) => serializeReportRecord(assignment, allocations.get(assignment.id))),

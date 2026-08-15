@@ -269,11 +269,26 @@ describe("XftService", () => {
       method: string;
       url: string;
       data: string;
-      headers: Record<string, string>;
+      headers: Record<string, string | number>;
     };
     expect(request.method).toBe("POST");
     expect(request.url).toContain("/hrm/hrm2/test?CSCAPPUID=appid&CSCPRJCOD=enterprise&");
     expect(request.headers["x-alb-digest"]).toBeTruthy();
+
+    const requestUrl = new URL(request.url);
+    const requestPath = `${requestUrl.pathname}${requestUrl.search}`;
+    const signaturePayload =
+      `POST ${requestPath}\n` +
+      `x-alb-digest: ${request.data}\n` +
+      `x-alb-timestamp: ${request.headers["x-alb-timestamp"]}`;
+    expect(
+      sm2.doVerifySignature(
+        signaturePayload,
+        String(request.headers.apisign),
+        xftKeyPair.publicKey,
+        { hash: true }
+      )
+    ).toBe(true);
 
     const encryptedRequest = JSON.parse(request.data) as { secretMsg: string };
     expect(JSON.parse(decryptXftBody(encryptedRequest.secretMsg, persistedConfig.appSecret))).toEqual({
