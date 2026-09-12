@@ -36,7 +36,7 @@ getAssignments = async (user: AuthenticatedUser) => {
 claimOperation = async (
     operationId: string,
     user: AuthenticatedUser,
-    options?: { startTime?: Date; endTime?: Date },
+    options?: { startTime?: Date; endTime?: Date; quantity?: number },
     permissionEnabled = false
   ) => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -122,7 +122,7 @@ claimOperation = async (
               status: ASSIGNMENT_STATUS.assigned,
               plannedStart,
               plannedEnd,
-              plannedQuantity: operation.plannedQuantity,
+              plannedQuantity: options?.quantity ?? operation.plannedQuantity,
               estimatedHours: operation.estimatedHours,
               actualStartAt: options?.startTime ?? null,
               actualEndAt: options?.endTime ?? null,

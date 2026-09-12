@@ -84,7 +84,8 @@ const parseThirdPartyImportPayload = (body: unknown) => {
 const actualTimeSchema = z
   .object({
     startTime: z.string().trim().min(1).optional(),
-    endTime: z.string().trim().min(1).optional()
+    endTime: z.string().trim().min(1).optional(),
+    quantity: z.number().int().positive().max(1_000_000).optional()
   })
   .optional()
   .superRefine((value, ctx) => {
@@ -124,10 +125,15 @@ const actualTimeSchema = z
 
 const parseActualTimeOptions = (body: unknown) => {
   const value = actualTimeSchema.parse(body);
-  if (!value?.startTime || !value.endTime) return undefined;
+  if (!value) return undefined;
+  const quantity = value.quantity;
+  if (!value.startTime || !value.endTime) {
+    return quantity !== undefined ? { quantity } : undefined;
+  }
   return {
     startTime: new Date(value.startTime),
-    endTime: new Date(value.endTime)
+    endTime: new Date(value.endTime),
+    ...(quantity !== undefined ? { quantity } : {})
   };
 };
 
@@ -277,6 +283,18 @@ workReportRouter.get(
       company: companyFilterSchema
     }).parse(req.query);
     res.json(await workReportService.listOperationNames(query.period, query.company));
+  })
+);
+
+workReportRouter.get(
+  "/admin/team-operation-stats",
+  requireCapability("canViewAdmin"),
+  asyncHandler(async (req, res) => {
+    const query = z.object({
+      company: companyFilterSchema,
+      teamName: z.string().trim().optional()
+    }).parse(req.query);
+    res.json(await workReportService.getTeamOperationStats(query.company, query.teamName || undefined));
   })
 );
 

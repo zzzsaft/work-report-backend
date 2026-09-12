@@ -8,7 +8,7 @@ export class TeamService {
   constructor(private readonly db: PrismaClient) {}
 
   list = async () => {
-    const teams = await this.db.team.findMany({
+    const rawTeams = await this.db.team.findMany({
       orderBy: { name: "asc" },
       include: {
         users: {
@@ -29,8 +29,12 @@ export class TeamService {
       }
     });
 
-    // Add virtual unassigned team
-    const unassignedUsers = await this.db.user.findMany({
+    // 将真实DB中名为"未分配班组"的团队成员并入虚拟未分配行，同时过滤掉真实团队本身
+    const teams = rawTeams.filter((t) => t.name !== UNASSIGNED_TEAM_NAME);
+    const realUnassigned = rawTeams.find((t) => t.name === UNASSIGNED_TEAM_NAME);
+    const realUnassignedUserIds = new Set(realUnassigned?.users?.map((u) => u.id) ?? []);
+
+    const nullTeamUsers = await this.db.user.findMany({
       where: { teamId: null },
       select: {
         id: true,
@@ -39,6 +43,17 @@ export class TeamService {
         teamName: true
       }
     });
+    // 合并：真实"未分配班组"里的成员 + teamId 为 null 的成员，按 id 去重
+    const mergedUsers = new Map<string, { id: string; name: string; employeeNo: string | null; teamName: string | null }>();
+    if (realUnassigned) {
+      for (const u of realUnassigned.users) mergedUsers.set(u.id, u);
+    }
+    for (const u of nullTeamUsers) {
+      if (!mergedUsers.has(u.id)) mergedUsers.set(u.id, u);
+    }
+    // 防止重复统计：若 teamId=null 的用户已在 realUnassignedUserIds 中出现过，按 ID 去重保证一致
+    const unassignedUsers = Array.from(mergedUsers.values());
+    void realUnassignedUserIds;
 
     const unassignedTeam = {
       id: UNASSIGNED_TEAM_ID,
@@ -103,8 +118,20 @@ export class TeamService {
 
   getMembers = async (teamId: string) => {
     if (teamId === UNASSIGNED_TEAM_ID) {
+      const realUnassigned = await this.db.team.findFirst({
+        where: { name: UNASSIGNED_TEAM_NAME },
+        select: { id: true }
+      });
+      const baseWhere = { teamId: null } as {
+        teamId?: string | null;
+        OR?: Array<{ teamId: string | null }>;
+      };
+      if (realUnassigned) {
+        delete baseWhere.teamId;
+        baseWhere.OR = [{ teamId: null }, { teamId: realUnassigned.id }];
+      }
       return this.db.user.findMany({
-        where: { teamId: null },
+        where: baseWhere,
         select: {
           id: true,
           name: true,
@@ -112,7 +139,8 @@ export class TeamService {
           teamName: true,
           nameInitials: true
         },
-        orderBy: { name: "asc" }
+        orderBy: { name: "asc" },
+        distinct: ["id"]
       });
     }
     const team = await this.db.team.findUnique({ where: { id: teamId } });

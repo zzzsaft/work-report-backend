@@ -63,7 +63,7 @@ export class WorkReportService {
   claimOperation = async (
     operationId: string,
     user: AuthenticatedUser,
-    options?: { startTime?: Date; endTime?: Date }
+    options?: { startTime?: Date; endTime?: Date; quantity?: number }
   ) => {
     const config = await this.systemConfig.get();
     return this.assignments.claimOperation(operationId, user, options, config.teamOperationPermissionEnabled);
@@ -78,6 +78,8 @@ export class WorkReportService {
 
   getStaffStats = (period: StaffStatsPeriod, operationNames?: string[], company?: string) =>
     this.statistics.getStaffStats(period, operationNames, company);
+
+  getTeamOperationStats = (company?: string, teamName?: string) => this.statistics.getTeamOperationStats(company, teamName);
 
   listOperationNames = async (period: StaffStatsPeriod, company?: string) => {
     const { start, end } = getPeriodRangeAsiaShanghai(period);

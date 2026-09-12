@@ -29,6 +29,7 @@ export const serializeWorkerPermission = (worker: {
 export const serializeReportRecord = (assignment: {
   id: string;
   operationPoolId: string;
+  plannedQuantity: number;
   workOrder: { orderNo: string; productName: string };
   part: { partNo: string | null; partCode: string; partName: string };
   operationPool: { operationCode: string; operationName: string; estimatedHours: number; operationNote: string };
@@ -61,6 +62,7 @@ export const serializeReportRecord = (assignment: {
     operationNote: assignment.operationPool.operationNote,
     operatorName: assignment.workerName,
     status: assignment.status,
+    plannedQuantity: assignment.plannedQuantity,
     claimedAt: assignment.claimedAt?.toISOString(),
     estimatedHours: assignment.estimatedHours ?? 0,
     allocatedHours: hourAllocation.allocatedHours,
