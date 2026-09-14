@@ -53,12 +53,31 @@ export class WorkReportService {
 
   getAssignments = (user: AuthenticatedUser) => this.assignments.getAssignments(user);
 
-  searchClaimableProducts = (keyword = "", page = 1, pageSize = 4) =>
-    this.claimable.searchClaimableProducts(keyword, page, pageSize);
+  // 班组-工序权限校验开启时，返回当前用户班组已分配的工序编码；未开启返回 null（不标记）
+  private resolveTeamOperationCodes = async (user?: AuthenticatedUser): Promise<string[] | null> => {
+    if (!user) return null;
+    const config = await this.systemConfig.get();
+    if (!config.teamOperationPermissionEnabled) return null;
+    const worker = await this.db.user.findUnique({
+      where: { id: user.id },
+      select: { teamId: true }
+    });
+    if (!worker?.teamId) return [];
+    const rows = await this.db.teamOperationAssignment.findMany({
+      where: { teamId: worker.teamId },
+      select: { operationCode: true }
+    });
+    return rows.map((row) => row.operationCode);
+  };
 
-  getClaimableParts = (productId: string) => this.claimable.getClaimableParts(productId);
+  searchClaimableProducts = async (keyword = "", page = 1, pageSize = 4, user?: AuthenticatedUser) =>
+    this.claimable.searchClaimableProducts(keyword, page, pageSize, await this.resolveTeamOperationCodes(user));
 
-  getClaimableOperations = (partId: string) => this.claimable.getClaimableOperations(partId);
+  getClaimableParts = async (productId: string, user?: AuthenticatedUser) =>
+    this.claimable.getClaimableParts(productId, await this.resolveTeamOperationCodes(user));
+
+  getClaimableOperations = async (partId: string, user?: AuthenticatedUser) =>
+    this.claimable.getClaimableOperations(partId, await this.resolveTeamOperationCodes(user));
 
   claimOperation = async (
     operationId: string,

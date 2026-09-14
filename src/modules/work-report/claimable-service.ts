@@ -1,18 +1,33 @@
 import type { PrismaClient } from "@prisma/client";
 import { CLAIMABLE_OPERATION_STATUSES } from "./constants.js";
-import { serializeOperation, serializePart, serializeProduct } from "./serializers.js";
+import { serializePart, serializeProduct } from "./serializers.js";
 
 const MAX_CLAIM_PRODUCTS_PAGE_SIZE = 50;
+
+const poolStatusWhere = { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } };
+
+// 大小写不敏感匹配工序编码
+const normalizeCode = (code: string) => code.toUpperCase();
+const hasPermissionFor = (operationCode: string, operationCodes: string[] | null) => {
+  if (operationCodes === null) return true;
+  const upper = normalizeCode(operationCode);
+  return operationCodes.some((c) => normalizeCode(c) === upper);
+};
+// 产品/部件有权限：至少一道工序属于班组已分配工序
+const hasAnyPermission = (codes: string[], operationCodes: string[] | null) => {
+  if (operationCodes === null) return true;
+  return codes.some((c) => hasPermissionFor(c, operationCodes));
+};
 
 export class ClaimableOperationService {
   constructor(private readonly db: PrismaClient) {}
 
-searchClaimableProducts = async (keyword = "", page = 1, pageSize = 4) => {
+searchClaimableProducts = async (keyword = "", page = 1, pageSize = 4, operationCodes: string[] | null = null) => {
     const safePage = Math.max(page, 1);
     const safePageSize = Math.min(Math.max(pageSize, 1), MAX_CLAIM_PRODUCTS_PAGE_SIZE);
     const normalized = keyword?.trim();
     const where = {
-      operationPools: { some: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } } },
+      operationPools: { some: poolStatusWhere },
       ...(normalized
         ? {
             OR: [
@@ -36,8 +51,8 @@ searchClaimableProducts = async (keyword = "", page = 1, pageSize = 4) => {
           plannedQuantity: true,
           completedQuantity: true,
           operationPools: {
-            where: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } },
-            select: { remainingQuantity: true }
+            where: poolStatusWhere,
+            select: { remainingQuantity: true, operationCode: true }
           }
         },
         skip: (safePage - 1) * safePageSize,
@@ -46,8 +61,17 @@ searchClaimableProducts = async (keyword = "", page = 1, pageSize = 4) => {
       })
     ]);
 
+    const decorated = products.map((p) => ({
+      ...p,
+      hasPermission: hasAnyPermission(p.operationPools.map((o) => o.operationCode), operationCodes)
+    }));
+    decorated.sort((a, b) => {
+      if (a.hasPermission !== b.hasPermission) return a.hasPermission ? -1 : 1;
+      return 0; // 保持 DB 原有排序
+    });
+
     return {
-      items: products.map(serializeProduct),
+      items: decorated.map((p) => ({ ...serializeProduct(p), hasPermission: p.hasPermission })),
       page: safePage,
       pageSize: safePageSize,
       total,
@@ -55,11 +79,11 @@ searchClaimableProducts = async (keyword = "", page = 1, pageSize = 4) => {
     };
   };
 
-getClaimableParts = async (productId: string) => {
+getClaimableParts = async (productId: string, operationCodes: string[] | null = null) => {
     const parts = await this.db.workOrderPart.findMany({
       where: {
         workOrderId: productId,
-        operationPools: { some: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } } }
+        operationPools: { some: poolStatusWhere }
       },
       select: {
         id: true,
@@ -70,16 +94,25 @@ getClaimableParts = async (productId: string) => {
         plannedQuantity: true,
         completedQuantity: true,
         operationPools: {
-          where: { status: { in: [...CLAIMABLE_OPERATION_STATUSES] } },
-          select: { remainingQuantity: true }
+          where: poolStatusWhere,
+          select: { remainingQuantity: true, operationCode: true }
         }
       }
     });
 
-    return parts.sort((a, b) => Number(a.partNo || 0) - Number(b.partNo || 0)).map(serializePart);
+    const decorated = parts.map((p) => ({
+      ...p,
+      hasPermission: hasAnyPermission(p.operationPools.map((o) => o.operationCode), operationCodes)
+    }));
+    decorated.sort((a, b) => {
+      if (a.hasPermission !== b.hasPermission) return a.hasPermission ? -1 : 1;
+      return Number(a.partNo || 0) - Number(b.partNo || 0);
+    });
+
+    return decorated.map((p) => ({ ...serializePart(p), hasPermission: p.hasPermission }));
   };
 
-getClaimableOperations = async (partId: string) => {
+getClaimableOperations = async (partId: string, operationCodes: string[] | null = null) => {
     const operations = await this.db.operationPool.findMany({
       where: {
         partId,
@@ -116,6 +149,38 @@ getClaimableOperations = async (partId: string) => {
       }
     });
 
-    return operations.sort((a, b) => Number(a.operationNo || 0) - Number(b.operationNo || 0)).map(serializeOperation);
+    // 有权限的排前面，无权限的排后面；同权限组内按 operationNo 数字排序
+    const decorated = operations.map((op) => ({
+      ...op,
+      hasPermission: hasPermissionFor(op.operationCode, operationCodes)
+    }));
+
+    decorated.sort((a, b) => {
+      if (a.hasPermission !== b.hasPermission) return a.hasPermission ? -1 : 1;
+      return Number(a.operationNo || 0) - Number(b.operationNo || 0);
+    });
+
+    return decorated.map((op) => ({
+      id: op.id,
+      productId: op.workOrderId,
+      partId: op.partId,
+      orderNo: op.workOrder.orderNo,
+      productCode: op.workOrder.productCode,
+      productName: op.workOrder.productName,
+      partNo: op.part.partNo ?? "",
+      partCode: op.part.partCode,
+      partName: op.part.partName,
+      operationNo: op.operationNo ?? "",
+      operationCode: op.operationCode,
+      operationName: op.operationName,
+      operationNote: op.operationNote,
+      plannedQuantity: op.plannedQuantity,
+      plannedStart: op.plannedStart?.toISOString() ?? null,
+      estimatedHours: op.estimatedHours,
+      claimedWorkers: op.claimedWorkers,
+      maxClaimWorkers: op.maxClaimWorkers ?? undefined,
+      status: op.status,
+      hasPermission: op.hasPermission
+    }));
   };
 }

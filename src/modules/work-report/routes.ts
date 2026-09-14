@@ -205,21 +205,21 @@ workReportRouter.get(
         pageSize: z.coerce.number().int().default(4)
       })
       .parse(req.query);
-    res.json(await workReportService.searchClaimableProducts(query.keyword, query.page, query.pageSize));
+    res.json(await workReportService.searchClaimableProducts(query.keyword, query.page, query.pageSize, requireUser(req)));
   })
 );
 
 workReportRouter.get(
   "/claim/products/:productId/parts",
   asyncHandler(async (req, res) => {
-    res.json(await workReportService.getClaimableParts(req.params.productId));
+    res.json(await workReportService.getClaimableParts(req.params.productId, requireUser(req)));
   })
 );
 
 workReportRouter.get(
   "/claim/parts/:partId/operations",
   asyncHandler(async (req, res) => {
-    res.json(await workReportService.getClaimableOperations(req.params.partId));
+    res.json(await workReportService.getClaimableOperations(req.params.partId, requireUser(req)));
   })
 );
 

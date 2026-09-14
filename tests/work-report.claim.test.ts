@@ -39,6 +39,14 @@ const createTx = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 });
 
+const createDb = (tx: Record<string, unknown>) => ({
+  $transaction: vi.fn((handler: (tx: Record<string, unknown>) => unknown) => handler(tx)),
+  systemConfig: {
+    findUnique: vi.fn().mockResolvedValue({ id: "default", teamOperationPermissionEnabled: false }),
+    create: vi.fn()
+  }
+});
+
 describe("WorkReportService claim flow", () => {
   beforeEach(() => {
     vi.useRealTimers();
@@ -54,7 +62,7 @@ it("returns paginated claimable products with stable ordering", async () => {
         productName: "产品A",
         plannedQuantity: 100,
         completedQuantity: 20,
-        operationPools: [{ remainingQuantity: 30 }, { remainingQuantity: 15 }]
+        operationPools: [{ remainingQuantity: 30, operationCode: "OP-010" }, { remainingQuantity: 15, operationCode: "OP-020" }]
       }
     ]);
     const db = { workOrder: { count, findMany } };
@@ -67,7 +75,8 @@ it("returns paginated claimable products with stable ordering", async () => {
           orderNo: "WO-001",
           productCode: "CP-001",
           productName: "产品A",
-          remainingQuantity: 45
+          remainingQuantity: 45,
+          hasPermission: true
         }
       ],
       page: 2,
@@ -96,7 +105,7 @@ it("returns paginated claimable products with stable ordering", async () => {
         completedQuantity: true,
         operationPools: {
           where: { status: { in: ["available", "claimed"] } },
-          select: { remainingQuantity: true }
+          select: { remainingQuantity: true, operationCode: true }
         }
       },
       skip: 2,
@@ -167,7 +176,7 @@ it("clamps claimable product pagination and preserves total when page is out of 
     });
     tx.operationAssignment.findFirst.mockResolvedValue({ id: "assignment-1", claimedAt: new Date("2026-06-25T08:45:00+08:00"), createdAt: new Date("2026-06-25T08:45:00+08:00") });
 
-    const db = { $transaction: vi.fn((handler) => handler(tx)) };
+    const db = createDb(tx);
     const service = new WorkReportService(db as never);
 
     await expect(service.claimOperation("op-1", user)).rejects.toMatchObject(
@@ -222,7 +231,7 @@ it("clamps claimable product pagination and preserves total when page is out of 
       assignedBy: null
     });
 
-    const db = { $transaction: vi.fn((handler) => handler(tx)) };
+    const db = createDb(tx);
     const service = new WorkReportService(db as never);
 
     await expect(service.claimOperation("op-1", user)).resolves.toMatchObject({ id: "assignment-new" });
@@ -283,7 +292,7 @@ it("clamps claimable product pagination and preserves total when page is out of 
       assignedBy: null
     });
 
-    const db = { $transaction: vi.fn((handler) => handler(tx)) };
+    const db = createDb(tx);
     const service = new WorkReportService(db as never);
 
     await expect(service.claimOperation("op-1", user)).resolves.toMatchObject({
@@ -316,7 +325,7 @@ it("clamps claimable product pagination and preserves total when page is out of 
       operationPool: { claimedWorkers: 1, status: "available" }
     });
 
-    const db = { $transaction: vi.fn((handler) => handler(tx)) };
+    const db = createDb(tx);
     const service = new WorkReportService(db as never);
 
     await expect(service.removeClaimedAssignment("assignment-1", user)).rejects.toMatchObject(
