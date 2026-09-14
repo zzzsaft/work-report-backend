@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import type { AuthenticatedUser } from "../../middleware/auth.js";
 import { AppError } from "../../lib/errors.js";
@@ -20,6 +20,14 @@ import type { StaffStatsPeriod, WorkReportPeriod } from "./report-period.js";
 
 export { MAX_IMPORT_OPERATIONS, type ThirdPartyImportOperation, type PermissionGroup };
 
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 分钟
+
+interface UserContextCache {
+  company: string | null;
+  operationCodes: string[] | null;
+  timestamp: number;
+}
+
 export class WorkReportService {
   private readonly importService: WorkReportImportService;
   private readonly reports: WorkReportQueryService;
@@ -31,6 +39,8 @@ export class WorkReportService {
   private readonly teams: TeamService;
   private readonly teamOperationAssignments: TeamOperationAssignmentService;
   private readonly systemConfig: SystemConfigService;
+
+  private readonly userContextCache = new Map<string, UserContextCache>();
 
   constructor(private readonly db: PrismaClient = prisma) {
     this.importService = new WorkReportImportService(db);
@@ -45,13 +55,24 @@ export class WorkReportService {
     this.systemConfig = new SystemConfigService(db);
   }
 
-  getReports = (filters: Parameters<WorkReportQueryService["getReports"]>[0] = {}) =>
-    this.reports.getReports(filters);
+  // 解析用户的公司 + 班组工序权限，带 5 分钟内存缓存
+  private resolveUserContext = async (user?: AuthenticatedUser): Promise<{ company: string | null; operationCodes: string[] | null }> => {
+    if (!user) return { company: null, operationCodes: null };
 
-  updateAssignmentHours = (assignmentId: string, estimatedHours: number) =>
-    this.reports.updateAssignmentHours(assignmentId, estimatedHours);
+    const cached = this.userContextCache.get(user.id);
+    const now = Date.now();
+    if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+      return { company: cached.company, operationCodes: cached.operationCodes };
+    }
 
-  getAssignments = (user: AuthenticatedUser) => this.assignments.getAssignments(user);
+    const [company, operationCodes] = await Promise.all([
+      this.resolveUserCompany(user),
+      this.resolveTeamOperationCodes(user)
+    ]);
+
+    this.userContextCache.set(user.id, { company, operationCodes, timestamp: now });
+    return { company, operationCodes };
+  };
 
   // 班组-工序权限校验开启时，返回当前用户班组已分配的工序编码；未开启返回 null（不标记）
   private resolveTeamOperationCodes = async (user?: AuthenticatedUser): Promise<string[] | null> => {
@@ -70,14 +91,47 @@ export class WorkReportService {
     return rows.map((row) => row.operationCode);
   };
 
-  searchClaimableProducts = async (keyword = "", page = 1, pageSize = 4, user?: AuthenticatedUser) =>
-    this.claimable.searchClaimableProducts(keyword, page, pageSize, await this.resolveTeamOperationCodes(user));
+  // 根据用户企微部门映射到公司标识：精诚(jctimes) / 精艺(JingyiMT)
+  private resolveUserCompany = async (user?: AuthenticatedUser): Promise<string | null> => {
+    if (!user) return null;
+    const userDepts = await this.db.wecomUserDepartment.findMany({
+      where: { userId: user.id },
+      select: { departmentId: true }
+    });
+    if (!userDepts.length) return null;
 
-  getClaimableParts = async (productId: string, user?: AuthenticatedUser) =>
-    this.claimable.getClaimableParts(productId, await this.resolveTeamOperationCodes(user));
+    const deptIds = userDepts.map((d) => d.departmentId);
+    const allDepts = await this.db.wecomDepartment.findMany({
+      where: { departmentId: { in: deptIds } },
+      select: { departmentId: true, parentId: true }
+    });
+    const deptMap = new Map(allDepts.map((d) => [d.departmentId, d.parentId]));
 
-  getClaimableOperations = async (partId: string, user?: AuthenticatedUser) =>
-    this.claimable.getClaimableOperations(partId, await this.resolveTeamOperationCodes(user));
+    for (const startId of deptIds) {
+      let current: number | undefined = startId;
+      while (current && current !== 1) {
+        if (current === 2) return "jctimes";
+        if (current === 16) return "JingyiMT";
+        current = deptMap.get(current);
+      }
+    }
+    return null;
+  };
+
+  searchClaimableProducts = async (keyword = "", page = 1, pageSize = 4, user?: AuthenticatedUser) => {
+    const { operationCodes, company } = await this.resolveUserContext(user);
+    return this.claimable.searchClaimableProducts(keyword, page, pageSize, operationCodes, company);
+  };
+
+  getClaimableParts = async (productId: string, user?: AuthenticatedUser) => {
+    const { operationCodes, company } = await this.resolveUserContext(user);
+    return this.claimable.getClaimableParts(productId, operationCodes, company);
+  };
+
+  getClaimableOperations = async (partId: string, user?: AuthenticatedUser) => {
+    const { operationCodes, company } = await this.resolveUserContext(user);
+    return this.claimable.getClaimableOperations(partId, operationCodes, company);
+  };
 
   claimOperation = async (
     operationId: string,
@@ -87,6 +141,8 @@ export class WorkReportService {
     const config = await this.systemConfig.get();
     return this.assignments.claimOperation(operationId, user, options, config.teamOperationPermissionEnabled);
   };
+
+  getAssignments = (user: AuthenticatedUser) => this.assignments.getAssignments(user);
 
   removeClaimedAssignment = (assignmentId: string, user: AuthenticatedUser) =>
     this.assignments.removeClaimedAssignment(assignmentId, user);
@@ -149,40 +205,37 @@ export class WorkReportService {
   completeOperation = (orderNo: string, partNo: string, operationNo: string, company?: string) =>
     this.admin.completeOperation(orderNo, partNo, operationNo, company);
 
-  // Team management
+  getReports = (query: Parameters<WorkReportQueryService["getReports"]>[0]) => this.reports.getReports(query);
+
+  updateAssignmentHours = (assignmentId: string, estimatedHours: number) =>
+    this.reports.updateAssignmentHours(assignmentId, estimatedHours);
+
+  // ===== Team Management =====
   listTeams = () => this.teams.list();
-
   createTeam = (name: string, description?: string) => this.teams.create(name, description);
-
   updateTeam = (id: string, name: string, description?: string) => this.teams.update(id, name, description);
-
   deleteTeam = (id: string) => this.teams.delete(id);
-
   getTeamMembers = (teamId: string) => this.teams.getMembers(teamId);
-
   addTeamMember = (teamId: string, userId: string) => this.teams.addMember(teamId, userId);
-
   removeTeamMember = (teamId: string, userId: string) => this.teams.removeMember(teamId, userId);
-
   setWorkerTeam = (userId: string, teamId: string | null) => this.teams.setMemberTeam(userId, teamId);
+  batchSetWorkerTeam = (userIds: string[], teamId: string | null) => this.teams.batchSetMemberTeams(userIds, teamId);
 
-  // Team operation assignments
+  // ===== Team Operation Assignment =====
   listTeamOperations = (teamId: string) => this.teamOperationAssignments.list(teamId);
-
   createTeamOperation = (teamId: string, operationCode: string, operationName?: string) =>
     this.teamOperationAssignments.create(teamId, operationCode, operationName);
-
   deleteTeamOperation = (id: string) => this.teamOperationAssignments.delete(id);
-
   batchDeleteTeamOperations = (ids: string[]) => this.teamOperationAssignments.batchDelete(ids);
-
   syncTeamOperations = () => this.teamOperationAssignments.syncFromWorkerAssignments();
 
-  // System config
+  // ===== System Config =====
   getSystemConfig = () => this.systemConfig.get();
+  updateSystemConfig = (data: { teamOperationPermissionEnabled?: boolean }) => this.systemConfig.update(data);
 
-  updateSystemConfig = (data: { teamOperationPermissionEnabled?: boolean }) =>
-    this.systemConfig.update(data);
+  resetDemo = () => {
+    throw new AppError(501, "resetDemo is not implemented");
+  };
 }
 
 export const workReportService = new WorkReportService();

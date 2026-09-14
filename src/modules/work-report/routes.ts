@@ -594,6 +594,17 @@ workReportRouter.patch(
   })
 );
 
+workReportRouter.patch(
+  "/admin/workers/team",
+  asyncHandler(async (req, res) => {
+    const body = z.object({
+      userIds: z.array(z.string().min(1)).min(1, "请选择至少一个人员"),
+      teamId: z.string().trim().nullable()
+    }).parse(req.body);
+    res.json(await workReportService.batchSetWorkerTeam(body.userIds, body.teamId));
+  })
+);
+
 // ===== Team Operation Assignment Routes =====
 
 workReportRouter.get(

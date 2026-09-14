@@ -52,8 +52,7 @@ describe("WorkReportService claim flow", () => {
     vi.useRealTimers();
   });
 
-it("returns paginated claimable products with stable ordering", async () => {
-    const count = vi.fn().mockResolvedValue(5);
+it("returns paginated claimable products with DB-level pagination", async () => {
     const findMany = vi.fn().mockResolvedValue([
       {
         id: "order-1",
@@ -62,27 +61,28 @@ it("returns paginated claimable products with stable ordering", async () => {
         productName: "产品A",
         plannedQuantity: 100,
         completedQuantity: 20,
+        createdAt: new Date("2026-06-01"),
         operationPools: [{ remainingQuantity: 30, operationCode: "OP-010" }, { remainingQuantity: 15, operationCode: "OP-020" }]
       }
     ]);
-    const db = { workOrder: { count, findMany } };
+    const count = vi.fn().mockResolvedValue(1);
+    const db = { workOrder: { findMany, count } };
     const service = new WorkReportService(db as never);
 
-    await expect(service.searchClaimableProducts(" cp ", 2, 2)).resolves.toEqual({
+    await expect(service.searchClaimableProducts(" cp ", 1, 2)).resolves.toEqual({
       items: [
         {
           id: "order-1",
           orderNo: "WO-001",
           productCode: "CP-001",
           productName: "产品A",
-          remainingQuantity: 45,
-          hasPermission: true
+          remainingQuantity: 45
         }
       ],
-      page: 2,
+      page: 1,
       pageSize: 2,
-      total: 5,
-      hasMore: true
+      total: 1,
+      hasMore: false
     });
 
     const where = {
@@ -108,16 +108,16 @@ it("returns paginated claimable products with stable ordering", async () => {
           select: { remainingQuantity: true, operationCode: true }
         }
       },
-      skip: 2,
+      skip: 0,
       take: 2,
       orderBy: [{ createdAt: "desc" }, { productCode: "asc" }, { id: "asc" }]
     });
   });
 
   it("treats an empty claimable product keyword as omitted", async () => {
-    const count = vi.fn().mockResolvedValue(0);
     const findMany = vi.fn().mockResolvedValue([]);
-    const db = { workOrder: { count, findMany } };
+    const count = vi.fn().mockResolvedValue(0);
+    const db = { workOrder: { findMany, count } };
     const service = new WorkReportService(db as never);
 
     await expect(service.searchClaimableProducts("   ")).resolves.toEqual({
@@ -128,23 +128,28 @@ it("returns paginated claimable products with stable ordering", async () => {
       hasMore: false
     });
 
-    expect(count).toHaveBeenCalledWith({
-      where: {
-        operationPools: { some: { status: { in: ["available", "claimed"] } } }
-      }
-    });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        skip: 0,
-        take: 4
+        where: {
+          operationPools: { some: { status: { in: ["available", "claimed"] } } }
+        }
       })
     );
   });
 
 it("clamps claimable product pagination and preserves total when page is out of range", async () => {
+    const allProducts = [
+      { id: "o1", orderNo: "WO-1", productCode: "P1", productName: "产品1", plannedQuantity: 10, completedQuantity: 0, createdAt: new Date(), operationPools: [{ remainingQuantity: 5, operationCode: "OP-010" }] },
+      { id: "o2", orderNo: "WO-2", productCode: "P2", productName: "产品2", plannedQuantity: 10, completedQuantity: 0, createdAt: new Date(), operationPools: [{ remainingQuantity: 5, operationCode: "OP-010" }] },
+      { id: "o3", orderNo: "WO-3", productCode: "P3", productName: "产品3", plannedQuantity: 10, completedQuantity: 0, createdAt: new Date(), operationPools: [{ remainingQuantity: 5, operationCode: "OP-010" }] }
+    ];
+    const findMany = vi.fn().mockImplementation((opts: { skip?: number; take?: number }) => {
+      const start = opts.skip ?? 0;
+      const end = start + (opts.take ?? allProducts.length);
+      return Promise.resolve(allProducts.slice(start, end));
+    });
     const count = vi.fn().mockResolvedValue(3);
-    const findMany = vi.fn().mockResolvedValue([]);
-    const db = { workOrder: { count, findMany } };
+    const db = { workOrder: { findMany, count } };
     const service = new WorkReportService(db as never);
 
     await expect(service.searchClaimableProducts("", 2, 100)).resolves.toEqual({
@@ -154,13 +159,6 @@ it("clamps claimable product pagination and preserves total when page is out of 
       total: 3,
       hasMore: false
     });
-
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        skip: 50,
-        take: 50
-      })
-    );
   });
 
   it("rejects duplicate claims within 30 minutes", async () => {

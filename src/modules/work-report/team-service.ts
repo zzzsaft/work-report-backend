@@ -216,4 +216,25 @@ export class TeamService {
       }
     });
   };
+
+  // 批量分配人员到班组
+  batchSetMemberTeams = async (userIds: string[], teamId: string | null) => {
+    if (userIds.length === 0) {
+      throw new AppError(400, "请选择要分配的人员");
+    }
+    let teamName: string | null = null;
+    if (teamId && teamId !== UNASSIGNED_TEAM_ID) {
+      const team = await this.db.team.findUnique({ where: { id: teamId } });
+      if (!team) {
+        throw new AppError(404, "班组不存在");
+      }
+      teamName = team.name;
+    }
+    const realTeamId = teamId === UNASSIGNED_TEAM_ID ? null : teamId;
+    const result = await this.db.user.updateMany({
+      where: { id: { in: userIds } },
+      data: { teamId: realTeamId, teamName }
+    });
+    return { count: result.count };
+  };
 }

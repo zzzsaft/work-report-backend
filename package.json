@@ -30,6 +30,7 @@
     "jsonwebtoken": "^9.0.2",
     "prisma": "^6.10.1",
     "sm-crypto": "^0.5.4",
+    "xlsx": "^0.18.5",
     "zod": "^3.24.1"
   },
   "devDependencies": {
