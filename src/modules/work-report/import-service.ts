@@ -20,17 +20,23 @@ export interface ThirdPartyImportOperation {
   operationName: string;
   estimatedHours: number;
   operationNote?: string;
+  ylpartnum?: string;
+  yldescription?: string;
+  mfgcomment?: string;
   plannedQuantity?: number;
   dueDate?: string | null;
   status?: "available" | "closed";
   company?: string;
 }
 
-interface NormalizedThirdPartyImportOperation extends Omit<ThirdPartyImportOperation, "dueDate" | "operationNote" | "plannedQuantity" | "status"> {
+interface NormalizedThirdPartyImportOperation extends Omit<ThirdPartyImportOperation, "dueDate" | "operationNote" | "ylpartnum" | "yldescription" | "mfgcomment" | "plannedQuantity" | "status"> {
   row: number;
   plannedQuantity: number;
   dueDate: Date;
   operationNote: string;
+  ylpartnum: string;
+  yldescription: string;
+  mfgcomment: string;
   status: "available" | "closed";
 }
 
@@ -82,6 +88,9 @@ const normalizeThirdPartyOperations = (operations: ThirdPartyImportOperation[]) 
       plannedQuantity,
       dueDate,
       operationNote: item.operationNote ?? "",
+      ylpartnum: item.ylpartnum ?? "",
+      yldescription: item.yldescription ?? "",
+      mfgcomment: item.mfgcomment ?? "",
       status: item.status ?? OPERATION_POOL_STATUS.available
     });
   }
@@ -216,6 +225,9 @@ export class WorkReportImportService {
             ${item.operationCode},
             ${item.operationName},
             ${item.operationNote},
+            ${item.ylpartnum},
+            ${item.yldescription},
+            ${item.mfgcomment},
             ${item.plannedQuantity},
             ${item.plannedQuantity},
             ${item.estimatedHours},
@@ -230,7 +242,8 @@ export class WorkReportImportService {
             await tx.$executeRaw`
               INSERT INTO work_report.operation_pool (
                 id, work_order_id, part_id, operation_no, operation_code,
-                operation_name, operation_note, planned_quantity, remaining_quantity,
+                operation_name, operation_note, ylpartnum, yldescription, mfgcomment,
+                planned_quantity, remaining_quantity,
                 estimated_hours, status, source, created_by, created_at, updated_at
               )
               VALUES ${Prisma.join(operationRows)}
@@ -238,6 +251,9 @@ export class WorkReportImportService {
                 operation_code = EXCLUDED.operation_code,
                 operation_name = EXCLUDED.operation_name,
                 operation_note = EXCLUDED.operation_note,
+                ylpartnum = EXCLUDED.ylpartnum,
+                yldescription = EXCLUDED.yldescription,
+                mfgcomment = EXCLUDED.mfgcomment,
                 planned_quantity = EXCLUDED.planned_quantity,
                 remaining_quantity = EXCLUDED.remaining_quantity,
                 estimated_hours = EXCLUDED.estimated_hours,

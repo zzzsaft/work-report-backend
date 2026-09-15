@@ -85,7 +85,7 @@ export class ClaimableOperationService {
       },
       select: {
         id: true, workOrderId: true, partId: true, operationNo: true, operationCode: true,
-        operationName: true, operationNote: true, plannedQuantity: true, plannedStart: true,
+        operationName: true, operationNote: true, ylpartnum: true, yldescription: true, mfgcomment: true, plannedQuantity: true, plannedStart: true,
         estimatedHours: true, claimedWorkers: true, maxClaimWorkers: true, status: true,
         workOrder: { select: { orderNo: true, productCode: true, productName: true } },
         part: { select: { partNo: true, partCode: true, partName: true } }
@@ -108,6 +108,7 @@ export class ClaimableOperationService {
       partNo: op.part.partNo ?? "", partCode: op.part.partCode, partName: op.part.partName,
       operationNo: op.operationNo ?? "", operationCode: op.operationCode,
       operationName: op.operationName, operationNote: op.operationNote,
+      ylpartnum: op.ylpartnum, yldescription: op.yldescription, mfgcomment: op.mfgcomment,
       plannedQuantity: op.plannedQuantity,
       plannedStart: op.plannedStart?.toISOString() ?? null,
       estimatedHours: op.estimatedHours,

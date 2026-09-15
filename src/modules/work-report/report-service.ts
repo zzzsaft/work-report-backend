@@ -87,9 +87,9 @@ getReports = async (filters: {
       this.db.operationAssignment.findMany({
         where,
         include: {
-          workOrder: { select: { orderNo: true, productName: true } },
+          workOrder: { select: { orderNo: true, productCode: true, productName: true } },
           part: { select: { partNo: true, partCode: true, partName: true } },
-          operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true, operationNote: true } },
+          operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true, operationNote: true, ylpartnum: true, yldescription: true, mfgcomment: true } },
           session: {
             select: { id: true, startedAt: true, completedAt: true, accumulatedSeconds: true }
           }
@@ -127,9 +127,9 @@ updateAssignmentHours = async (assignmentId: string, estimatedHours: number) => 
     const updated = await this.db.operationAssignment.findUnique({
       where: { id: assignmentId },
       include: {
-        workOrder: { select: { orderNo: true, productName: true } },
+        workOrder: { select: { orderNo: true, productCode: true, productName: true } },
         part: { select: { partNo: true, partCode: true, partName: true } },
-        operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true, operationNote: true } },
+        operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true, operationNote: true, ylpartnum: true, yldescription: true, mfgcomment: true } },
         session: {
           select: { id: true, startedAt: true, completedAt: true, accumulatedSeconds: true }
         }
