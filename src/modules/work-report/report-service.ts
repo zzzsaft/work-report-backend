@@ -89,7 +89,7 @@ getReports = async (filters: {
         include: {
           workOrder: { select: { orderNo: true, productCode: true, productName: true } },
           part: { select: { partNo: true, partCode: true, partName: true } },
-          operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true, operationNote: true, ylpartnum: true, yldescription: true, mfgcomment: true } },
+          operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true, operationNote: true, ylpartnum: true, yldescription: true, mfgcomment: true, plannedQuantity: true } },
           session: {
             select: { id: true, startedAt: true, completedAt: true, accumulatedSeconds: true }
           }
@@ -129,7 +129,7 @@ updateAssignmentHours = async (assignmentId: string, estimatedHours: number) => 
       include: {
         workOrder: { select: { orderNo: true, productCode: true, productName: true } },
         part: { select: { partNo: true, partCode: true, partName: true } },
-        operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true, operationNote: true, ylpartnum: true, yldescription: true, mfgcomment: true } },
+        operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true, operationNote: true, ylpartnum: true, yldescription: true, mfgcomment: true, plannedQuantity: true } },
         session: {
           select: { id: true, startedAt: true, completedAt: true, accumulatedSeconds: true }
         }

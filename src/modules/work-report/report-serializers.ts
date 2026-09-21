@@ -32,7 +32,7 @@ export const serializeReportRecord = (assignment: {
   plannedQuantity: number;
   workOrder: { orderNo: string; productCode: string; productName: string };
   part: { partNo: string | null; partCode: string; partName: string };
-  operationPool: { operationCode: string; operationName: string; estimatedHours: number; operationNote: string; ylpartnum: string; yldescription: string; mfgcomment: string };
+  operationPool: { operationCode: string; operationName: string; estimatedHours: number; operationNote: string; ylpartnum: string; yldescription: string; mfgcomment: string; plannedQuantity: number };
   workerName: string;
   status: string;
   claimedAt: Date | null;
@@ -67,6 +67,8 @@ export const serializeReportRecord = (assignment: {
     operatorName: assignment.workerName,
     status: assignment.status,
     plannedQuantity: assignment.plannedQuantity,
+    demandQuantity: assignment.operationPool.plannedQuantity,
+    completedQuantity: assignment.plannedQuantity,
     claimedAt: assignment.claimedAt?.toISOString(),
     estimatedHours: assignment.estimatedHours ?? 0,
     allocatedHours: hourAllocation.allocatedHours,
