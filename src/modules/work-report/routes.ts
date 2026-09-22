@@ -38,6 +38,8 @@ const thirdPartyImportOperationSchema = z.object({
   ylpartnum: z.string().trim().optional(),
   yldescription: z.string().trim().optional(),
   mfgcomment: z.string().trim().optional(),
+  cpNum: z.string().trim().optional(),
+  cpDes: z.string().trim().optional(),
   plannedQuantity: z.coerce.number().positive().optional(),
   dueDate: dateStringSchema.nullable().optional(),
   status: z.enum(["available", "closed"]).optional(),

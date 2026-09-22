@@ -367,6 +367,8 @@ model OperationPool {
   ylpartnum         String           @default("") @map("ylpartnum")
   yldescription     String           @default("") @map("yldescription")
   mfgcomment        String           @default("") @map("mfgcomment")
+  cpNum             String           @default("") @map("cpnum")
+  cpDes             String           @default("") @map("cpdes")
   plannedQuantity   Int              @map("planned_quantity")
   plannedStart      DateTime?        @map("planned_start")
   remainingQuantity Int              @map("remaining_quantity")

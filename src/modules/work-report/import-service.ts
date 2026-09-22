@@ -23,13 +23,15 @@ export interface ThirdPartyImportOperation {
   ylpartnum?: string;
   yldescription?: string;
   mfgcomment?: string;
+  cpNum?: string;
+  cpDes?: string;
   plannedQuantity?: number;
   dueDate?: string | null;
   status?: "available" | "closed";
   company?: string;
 }
 
-interface NormalizedThirdPartyImportOperation extends Omit<ThirdPartyImportOperation, "dueDate" | "operationNote" | "ylpartnum" | "yldescription" | "mfgcomment" | "plannedQuantity" | "status"> {
+interface NormalizedThirdPartyImportOperation extends Omit<ThirdPartyImportOperation, "dueDate" | "operationNote" | "ylpartnum" | "yldescription" | "mfgcomment" | "cpNum" | "cpDes" | "plannedQuantity" | "status"> {
   row: number;
   plannedQuantity: number;
   dueDate: Date;
@@ -37,6 +39,8 @@ interface NormalizedThirdPartyImportOperation extends Omit<ThirdPartyImportOpera
   ylpartnum: string;
   yldescription: string;
   mfgcomment: string;
+  cpNum: string;
+  cpDes: string;
   status: "available" | "closed";
 }
 
@@ -91,6 +95,8 @@ const normalizeThirdPartyOperations = (operations: ThirdPartyImportOperation[]) 
       ylpartnum: item.ylpartnum ?? "",
       yldescription: item.yldescription ?? "",
       mfgcomment: item.mfgcomment ?? "",
+      cpNum: item.cpNum ?? "",
+      cpDes: item.cpDes ?? "",
       status: item.status ?? OPERATION_POOL_STATUS.available
     });
   }
@@ -228,6 +234,8 @@ export class WorkReportImportService {
             ${item.ylpartnum},
             ${item.yldescription},
             ${item.mfgcomment},
+            ${item.cpNum},
+            ${item.cpDes},
             ${item.plannedQuantity},
             ${item.plannedQuantity},
             ${item.estimatedHours},
@@ -242,7 +250,7 @@ export class WorkReportImportService {
             await tx.$executeRaw`
               INSERT INTO work_report.operation_pool (
                 id, work_order_id, part_id, operation_no, operation_code,
-                operation_name, operation_note, ylpartnum, yldescription, mfgcomment,
+                operation_name, operation_note, ylpartnum, yldescription, mfgcomment, cpnum, cpdes,
                 planned_quantity, remaining_quantity,
                 estimated_hours, status, source, created_by, created_at, updated_at
               )
@@ -254,6 +262,8 @@ export class WorkReportImportService {
                 ylpartnum = EXCLUDED.ylpartnum,
                 yldescription = EXCLUDED.yldescription,
                 mfgcomment = EXCLUDED.mfgcomment,
+                cpnum = EXCLUDED.cpnum,
+                cpdes = EXCLUDED.cpdes,
                 planned_quantity = EXCLUDED.planned_quantity,
                 remaining_quantity = EXCLUDED.remaining_quantity,
                 estimated_hours = EXCLUDED.estimated_hours,

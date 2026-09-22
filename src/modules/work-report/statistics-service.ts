@@ -81,7 +81,7 @@ getStatistics = async (period: WorkReportPeriod, user: AuthenticatedUser) => {
       include: {
         workOrder: { select: { orderNo: true, productCode: true, productName: true } },
         part: { select: { partNo: true, partCode: true, partName: true } },
-        operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true, operationNote: true, ylpartnum: true, yldescription: true, mfgcomment: true, plannedQuantity: true } },
+        operationPool: { select: { operationCode: true, operationName: true, estimatedHours: true, operationNote: true, ylpartnum: true, yldescription: true, mfgcomment: true, cpNum: true, cpDes: true, plannedQuantity: true } },
         session: {
           select: { id: true, startedAt: true, completedAt: true, accumulatedSeconds: true }
         }
